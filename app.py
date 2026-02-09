@@ -2,6 +2,13 @@ import paho.mqtt.client as mqtt
 from flask import Flask, render_template, jsonify
 import json
 import threading
+from flask import request
+
+@app.route("/api/mqtt", methods=["POST"])
+def recibir_mqtt():
+    global datos_actuales
+    datos_actuales = request.json
+    return {"status": "ok"}
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -52,3 +59,4 @@ def index():
 @app.route("/datos")
 def datos():
     return jsonify(datos_actuales)
+
