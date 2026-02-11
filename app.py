@@ -1,7 +1,5 @@
-import paho.mqtt.client as mqtt
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 import json
-import threading
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -15,50 +13,44 @@ datos_actuales = {
     "estado": "SIN DATOS"
 }
 
-# ===== MQTT =====
-MQTT_BROKER = "broker.hivemq.com"
-MQTT_TOPIC = "tesis/sergio/lechuga/global"
-
-def on_message(client, userdata, message):
+# ===== ENDPOINT PARA RECIBIR DATOS DEL ESP32 =====
+@app.route("/api/datos", methods=["POST"])
+def recibir_datos():
     global datos_actuales
-    print("📥 Mensaje recibido:", message.payload.decode())
+
     try:
-        payload = json.loads(message.payload.decode())
-        datos_actuales.update({
+        payload = request.json
+
+        datos_actuales = {
             "temperatura": round(payload.get("temperatura", 0), 1),
             "humedad_aire": round(payload.get("humedad_aire", 0), 1),
             "humedad_suelo": payload.get("humedad_suelo", 0),
             "luminosidad": payload.get("luminosidad", 0),
-            "lux_p": round(payload.get("luminosidad", 0), 1),
+            "lux_p": round(payload.get("lux_p", 0), 1),
             "estado": payload.get("estado", "OK")
-        })
+        }
+
+        print("📥 Datos recibidos vía HTTP:", datos_actuales)
+
+        return {"status": "ok"}, 200
+
     except Exception as e:
-        print("❌ Error MQTT:", e)
-
-def mqtt_loop():
-    client = mqtt.Client()
-    client.on_message = on_message
-
-    while True:
-        try:
-            print("🔌 Conectando a MQTT...")
-            client.connect(MQTT_BROKER, 1883, 60)
-            client.subscribe(MQTT_TOPIC)
-            print("📡 Suscrito a:", MQTT_TOPIC)
-            client.loop_forever()
-        except Exception as e:
-            print("❌ Error MQTT:", e)
+        print("❌ Error procesando datos:", e)
+        return {"status": "error"}, 400
 
 
-# HILO MQTT
-threading.Thread(target=mqtt_loop, daemon=True).start()
-
-# ===== FLASK =====
+# ===== RUTAS WEB =====
 @app.route("/")
 def index():
     return render_template("index.html")
 
+
 @app.route("/datos")
 def datos():
     return jsonify(datos_actuales)
+
+
+# ===== INICIO =====
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
 
