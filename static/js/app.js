@@ -1,64 +1,60 @@
 let ctx = document.getElementById("graficoMultivariable").getContext("2d");
-let sistemaActivo = true;
-let ultimoTimestamp = 0;
+
+let ultimoHash = "";
 
 let miGrafica = new Chart(ctx, {
     type: "line",
     data: {
         labels: [],
         datasets: [
-            { label: "Temp", data: [], borderColor: "#e74c3c", yAxisID: 'y' },
-            { label: "H.Aire", data: [], borderColor: "#3498db", yAxisID: 'y' },
-            { label: "H.Suelo", data: [], borderColor: "#e67e22", yAxisID: 'y' },
-            { label: "Luz", data: [], borderColor: "#f1c40f", yAxisID: 'y1' }
+            { label: "Temp", data: [], borderColor: "#e74c3c", tension: 0.2 },
+            { label: "H.Aire", data: [], borderColor: "#3498db", tension: 0.2 },
+            { label: "H.Suelo", data: [], borderColor: "#e67e22", tension: 0.2 },
+            { label: "Luz", data: [], borderColor: "#f1c40f", tension: 0.2 }
         ]
     },
     options: {
         animation: false,
         responsive: true,
-        scales: { 
-            y: { position: 'left', max: 100 }, 
-            y1: { position: 'right', max: 100, grid: {drawOnChartArea: false} } 
+        parsing: false,
+        plugins: { legend: { display: true } },
+        scales: {
+            y: { beginAtZero: true, max: 100 }
         }
     }
 });
 
 
 // ===============================
-// ACTUALIZACIÓN CONTROLADA
+// ACTUALIZACIÓN EFICIENTE
 // ===============================
 
-setInterval(() => {
+async function actualizar() {
 
-    fetch("/datos")
-    .then(res => res.json())
-    .then(data => {
+    try {
+        const res = await fetch("/datos");
+        const data = await res.json();
 
-        // Si sistema apagado o desconectado
+        const hashActual = JSON.stringify(data);
+
+        // 🔥 Si no hay cambios reales, no hacer nada
+        if (hashActual === ultimoHash) return;
+
+        ultimoHash = hashActual;
+
+        // Estados especiales
         if (data.estado === "SISTEMA APAGADO" || data.estado === "DESCONECTADO") {
-            sistemaActivo = false;
             mostrarEstadoEspecial(data.estado);
             return;
         }
 
-        sistemaActivo = true;
-
-        // SOLO actualizar si hay cambio real
-        let nuevoTimestamp = JSON.stringify(data);
-
-        if (nuevoTimestamp === ultimoTimestamp) return;
-
-        ultimoTimestamp = nuevoTimestamp;
-
         actualizarUI(data);
-        evaluar("temp", data.temperatura, 18, 24);
-        evaluar("humAir", data.humedad_aire, 60, 80);
-        evaluar("humSoil", data.humedad_suelo, 65, 80);
-        evaluar("lux", data.luminosidad, 60, 85);
         actualizarGrafica(data);
-    });
 
-}, 5000);
+    } catch (error) {
+        console.log("Error fetch:", error);
+    }
+}
 
 
 // ===============================
@@ -76,12 +72,24 @@ function actualizarUI(data) {
 
 
 // ===============================
-// EVALUACIÓN VISUAL
+// GRÁFICA ULTRA LIGERA
 // ===============================
 
-function evaluar(id, val, min, max) {
-    const el = document.getElementById(id);
-    el.className = (val >= min && val <= max) ? "card verde" : "card rojo";
+function actualizarGrafica(d) {
+
+    if (miGrafica.data.labels.length >= 8) {
+        miGrafica.data.labels.shift();
+        miGrafica.data.datasets.forEach(ds => ds.data.shift());
+    }
+
+    miGrafica.data.labels.push(new Date().toLocaleTimeString());
+
+    miGrafica.data.datasets[0].data.push(d.temperatura);
+    miGrafica.data.datasets[1].data.push(d.humedad_aire);
+    miGrafica.data.datasets[2].data.push(d.humedad_suelo);
+    miGrafica.data.datasets[3].data.push(d.luminosidad);
+
+    miGrafica.update("none"); // 🔥 actualización sin animación
 }
 
 
@@ -91,48 +99,21 @@ function evaluar(id, val, min, max) {
 
 function mostrarEstadoEspecial(estado) {
 
-    const stTxt = document.getElementById("estado-sistema");
-    const diag = document.getElementById("mensaje-adecuado");
-
-    stTxt.innerText = estado;
-    stTxt.style.color = (estado === "SISTEMA APAGADO") ? "#c0392b" : "gray";
-
-    diag.innerText = estado;
-    diag.className = "diagnostico-box";
+    document.getElementById("estado-sistema").innerText = estado;
 
     document.querySelectorAll("span").forEach(s => s.innerText = "--");
+
+    miGrafica.data.labels = [];
+    miGrafica.data.datasets.forEach(ds => ds.data = []);
+    miGrafica.update("none");
 }
 
 
 // ===============================
-// ACTUALIZAR GRÁFICA OPTIMIZADA
-// ===============================
-
-function actualizarGrafica(d) {
-
-    if (!sistemaActivo) return;
-
-    if (miGrafica.data.labels.length > 12) {
-        miGrafica.data.labels.shift();
-        miGrafica.data.datasets.forEach(ds => ds.data.shift());
-    }
-
-    miGrafica.data.labels.push(new Date().toLocaleTimeString());
-    miGrafica.data.datasets[0].data.push(d.temperatura);
-    miGrafica.data.datasets[1].data.push(d.humedad_aire);
-    miGrafica.data.datasets[2].data.push(d.humedad_suelo);
-    miGrafica.data.datasets[3].data.push(d.luminosidad);
-
-    miGrafica.update();
-}
-
-
-// ===============================
-// CONTROL SISTEMA
+// BOTONES
 // ===============================
 
 function controlSistema(accion) {
-
     fetch("/control", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -140,3 +121,9 @@ function controlSistema(accion) {
     });
 }
 
+
+// ===============================
+// INTERVALO CONTROLADO
+// ===============================
+
+setInterval(actualizar, 3000);
