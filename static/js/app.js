@@ -1,206 +1,101 @@
 let ctx = document.getElementById("graficoMultivariable").getContext("2d");
-
 let sistemaActivo = true;
-let ultimoTimestamp = 0;
-
-/* ===========================
-   CONFIGURACIÓN GRÁFICA PRO
-=========================== */
 
 let miGrafica = new Chart(ctx, {
     type: "line",
     data: {
         labels: [],
         datasets: [
-            {
-                label: "Temp",
-                data: [],
-                borderColor: "#e74c3c",
-                borderWidth: 2,
-                pointRadius: 2,
-                tension: 0.2
-            },
-            {
-                label: "H.Aire",
-                data: [],
-                borderColor: "#3498db",
-                borderWidth: 2,
-                pointRadius: 2,
-                tension: 0.2
-            },
-            {
-                label: "H.Suelo",
-                data: [],
-                borderColor: "#e67e22",
-                borderWidth: 2,
-                pointRadius: 2,
-                tension: 0.2
-            },
-            {
-                label: "Luz",
-                data: [],
-                borderColor: "#f1c40f",
-                borderWidth: 2,
-                pointRadius: 2,
-                tension: 0.2
-            }
+            { label: "Temp", data: [], borderColor: "#e74c3c", yAxisID: 'y' },
+            { label: "H.Aire", data: [], borderColor: "#3498db", yAxisID: 'y' },
+            { label: "H.Suelo", data: [], borderColor: "#e67e22", yAxisID: 'y' },
+            { label: "Luz", data: [], borderColor: "#f1c40f", yAxisID: 'y1' }
         ]
     },
     options: {
-        animation: false,
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-            y: {
-                beginAtZero: true,
-                max: 100
-            }
+        scales: { 
+            y: { position: 'left', max: 100 }, 
+            y1: { position: 'right', max: 1000, grid: {drawOnChartArea: false} } 
         }
     }
 });
 
-/* ===========================
-   ACTUALIZACIÓN EN TIEMPO REAL
-=========================== */
-
-setInterval(actualizar, 1000); // 1 segundo REAL TIME
-
-async function actualizar() {
-
+setInterval(() => {
     if (!sistemaActivo) return;
+    fetch("/datos").then(res => res.json()).then(data => {
+        if (data.temperatura === null) return;
 
-    try {
-        const res = await fetch("/datos");
-        const data = await res.json();
+        // Actualizar UI
+        document.getElementById("temperatura").innerText = data.temperatura;
+        document.getElementById("humedad_aire").innerText = data.humedad_aire;
+        document.getElementById("humedad_suelo").innerText = data.humedad_suelo;
+        document.getElementById("luminosidad").innerText = data.luminosidad;
+        document.getElementById("lux_p").innerText = data.lux_p;
 
-        if (data.timestamp === ultimoTimestamp) return;
-        ultimoTimestamp = data.timestamp;
+        // Evaluar colores individuales
+        evaluar("temp", data.temperatura, 15, 18);
+        evaluar("humAir", data.humedad_aire, 60, 80);
+        evaluar("humSoil", data.humedad_suelo, 70, 80);
+        evaluar("lux", data.luminosidad, 400, 600);
 
-        actualizarUI(data);
+        // Diagnóstico de Cultivo
+        verificarCultivo(data);
+        
+        // Actualizar Gráfica
         actualizarGrafica(data);
+    });
+}, 1000);
 
-    } catch (error) {
-        console.log("Error:", error);
-    }
+function evaluar(id, val, min, max) {
+    const el = document.getElementById(id);
+    el.className = (val >= min && val <= max) ? "card verde" : "card rojo";
 }
 
-/* ===========================
-   ACTUALIZAR INTERFAZ
-=========================== */
-
-function actualizarUI(data) {
-
-    document.getElementById("temperatura").innerText = data.temperatura.toFixed(1);
-    document.getElementById("humedad_aire").innerText = data.humedad_aire.toFixed(1);
-    document.getElementById("humedad_suelo").innerText = data.humedad_suelo.toFixed(0);
-    document.getElementById("luminosidad").innerText = data.luminosidad.toFixed(0);
-    document.getElementById("lux_p").innerText = data.lux_p.toFixed(0);
-
-    let alertas = [];
-
-    // LIMPIAR COLORES
-    limpiarEstado("temp");
-    limpiarEstado("humAir");
-    limpiarEstado("humSoil");
-    limpiarEstado("lux");
-
-    /* ===== RANGOS ÓPTIMOS LECHUGA CRESPA ===== */
-
-    if (data.temperatura < 18 || data.temperatura > 24) {
-        alertas.push("Temperatura");
-        setRojo("temp");
-    } else setVerde("temp");
-
-    if (data.humedad_aire < 60 || data.humedad_aire > 80) {
-        alertas.push("Humedad Aire");
-        setRojo("humAir");
-    } else setVerde("humAir");
-
-    if (data.humedad_suelo < 65 || data.humedad_suelo > 80) {
-        alertas.push("Humedad Suelo");
-        setRojo("humSoil");
-    } else setVerde("humSoil");
-
-    if (data.lux_p < 30 || data.lux_p > 80) {
-        alertas.push("Luminosidad");
-        setRojo("lux");
-    } else setVerde("lux");
-
+function verificarCultivo(data) {
     const box = document.getElementById("mensaje-adecuado");
+    let causa = "";
+    if (data.temperatura < 15 || data.temperatura > 18) causa = "Temperatura";
+    else if (data.humedad_aire < 60 || data.humedad_aire > 80) causa = "Hum. Aire";
+    else if (data.humedad_suelo < 70 || data.humedad_suelo > 80) causa = "Hum. Suelo";
+    else if (data.luminosidad < 400 || data.luminosidad > 600) causa = "Luz";
 
-    if (alertas.length === 0) {
-        box.innerText = "✅ CULTIVO EN CONDICIONES ÓPTIMAS";
+    if (causa === "") {
+        box.innerText = "✅ CULTIVO ADECUADO: CONDICIONES ÓPTIMAS";
         box.className = "diagnostico-box estado-adecuado";
     } else {
-        box.innerText = "⚠ ALERTA: CONDICIONES NO ÓPTIMAS (" + alertas.join(", ") + ")";
+        box.innerText = `⚠️ ALERTA: CONDICIONES NO ÓPTIMAS (${causa})`;
         box.className = "diagnostico-box estado-alerta";
     }
 }
 
-/* ===========================
-   ACTUALIZAR GRÁFICA
-=========================== */
-
 function actualizarGrafica(d) {
-
-    if (miGrafica.data.labels.length > 20) {
+    if (miGrafica.data.labels.length > 15) {
         miGrafica.data.labels.shift();
         miGrafica.data.datasets.forEach(ds => ds.data.shift());
     }
-
     miGrafica.data.labels.push(new Date().toLocaleTimeString());
-
     miGrafica.data.datasets[0].data.push(d.temperatura);
     miGrafica.data.datasets[1].data.push(d.humedad_aire);
     miGrafica.data.datasets[2].data.push(d.humedad_suelo);
-    miGrafica.data.datasets[3].data.push(d.lux_p);
-
-    miGrafica.update("none");
+    miGrafica.data.datasets[3].data.push(d.luminosidad);
+    miGrafica.update();
 }
 
-/* ===========================
-   CONTROL SISTEMA
-=========================== */
-
-function controlSistema(accion) {
-
-    if (accion === "apagar") {
-        sistemaActivo = false;
-
-        document.getElementById("estado-sistema").innerText = "Estado: SISTEMA APAGADO";
-
-        document.querySelectorAll(".card").forEach(c => {
-            c.classList.remove("verde");
-            c.classList.add("rojo");
-        });
-
-        const box = document.getElementById("mensaje-adecuado");
-        box.innerText = "🔴 SISTEMA APAGADO";
-        box.className = "diagnostico-box estado-alerta";
-
-    }
-
-    if (accion === "encender") {
+function controlSistema(estado) {
+    fetch(`/control/${estado}`);
+    const stTxt = document.getElementById("estado-sistema");
+    const diag = document.getElementById("mensaje-adecuado");
+    
+    if (estado === 'on') {
         sistemaActivo = true;
-        document.getElementById("estado-sistema").innerText = "Estado: SISTEMA ENCENDIDO";
+        stTxt.innerText = "SISTEMA OPERANDO NORMALMENTE: RECIBIENDO DATOS";
+        stTxt.style.color = "#27ae60";
+    } else {
+        sistemaActivo = false;
+        stTxt.innerText = "SISTEMA APAGADO";
+        stTxt.style.color = "#c0392b";
+        diag.innerText = "SISTEMA FUERA DE LÍNEA";
+        diag.className = "diagnostico-box";
+        document.querySelectorAll("span").forEach(s => s.innerText = "--");
     }
 }
-
-/* ===========================
-   FUNCIONES AUXILIARES
-=========================== */
-
-function setRojo(id) {
-    document.getElementById(id).classList.add("rojo");
-}
-
-function setVerde(id) {
-    document.getElementById(id).classList.add("verde");
-}
-
-function limpiarEstado(id) {
-    let el = document.getElementById(id);
-    el.classList.remove("rojo");
-    el.classList.remove("verde");
-}
-
