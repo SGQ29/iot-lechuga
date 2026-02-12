@@ -12,41 +12,28 @@
         <h2>Cultivo: Lechuga Crespa</h2>
 
         <div id="diagnostico-container">
-            <div id="mensaje-adecuado" class="diagnostico-box">
-                Esperando datos del sistema...
-            </div>
+            <div id="mensaje-adecuado" class="diagnostico-box">Esperando datos del sistema...</div>
         </div>
 
-        <div class="card" id="temp">
-            🌡 Temperatura: <span id="temperatura">--</span> °C
-        </div>
-
-        <div class="card" id="humAir">
-            💧 Humedad aire: <span id="humedad_aire">--</span> %
-        </div>
-
-        <div class="card" id="humSoil">
-            🌱 Humedad suelo: <span id="humedad_suelo">--</span> %
-        </div>
-
-        <div class="card" id="lux">
-            ☀ Luminosidad: 
-            <span id="luminosidad">--</span> µmol/m²/s 
-            (<span id="lux_p">--</span>%)
-        </div>
+        <div class="card" id="temp">🌡 Temperatura: <span id="temperatura">--</span> °C</div>
+        <div class="card" id="humAir">💧 Humedad aire: <span id="humedad_aire">--</span> %</div>
+        <div class="card" id="humSoil">🌱 Humedad suelo: <span id="humedad_suelo">--</span> %</div>
+        <div class="card" id="lux">☀ Luminosidad: <span id="luminosidad">--</span> µmol/m²/s (<span id="lux_p">--</span>%)</div>
 
         <div class="botones">
-            <button class="on" onclick="controlSistema('encender')">🟢 ENCENDER</button>
-            <button class="off" onclick="controlSistema('apagar')">🔴 APAGAR</button>
+            <button class="on" onclick="controlSistema('on')">🟢 ENCENDER</button>
+            <button class="off" onclick="controlSistema('off')">🔴 APAGAR</button>
         </div>
 
         <canvas id="graficoMultivariable"></canvas>
 
-        <div id="estado-sistema" class="estado">
-            Estado: --
-        </div>
+        <div id="estado-sistema" class="estado">Estado: --</div>
     </div>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
 
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>
+
