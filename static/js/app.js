@@ -1,5 +1,6 @@
 let ctx = document.getElementById("graficoMultivariable").getContext("2d");
 let sistemaActivo = true;
+let ultimoTimestamp = 0;
 
 let miGrafica = new Chart(ctx, {
     type: "line",
@@ -14,6 +15,7 @@ let miGrafica = new Chart(ctx, {
     },
     options: {
         animation: false,
+        responsive: true,
         scales: { 
             y: { position: 'left', max: 100 }, 
             y1: { position: 'right', max: 100, grid: {drawOnChartArea: false} } 
@@ -22,9 +24,9 @@ let miGrafica = new Chart(ctx, {
 });
 
 
-// ==========================
-// ACTUALIZACIÓN EN TIEMPO REAL
-// ==========================
+// ===============================
+// ACTUALIZACIÓN CONTROLADA
+// ===============================
 
 setInterval(() => {
 
@@ -32,128 +34,85 @@ setInterval(() => {
     .then(res => res.json())
     .then(data => {
 
-        // ===== SI SISTEMA APAGADO =====
-        if (data.estado === "SISTEMA APAGADO") {
+        // Si sistema apagado o desconectado
+        if (data.estado === "SISTEMA APAGADO" || data.estado === "DESCONECTADO") {
             sistemaActivo = false;
-            mostrarApagado();
-            return;
-        }
-
-        // ===== SI DESCONECTADO =====
-        if (data.estado === "DESCONECTADO") {
-            sistemaActivo = false;
-            mostrarDesconectado();
+            mostrarEstadoEspecial(data.estado);
             return;
         }
 
         sistemaActivo = true;
 
-        // ===== ACTUALIZAR UI =====
-        document.getElementById("temperatura").innerText = data.temperatura;
-        document.getElementById("humedad_aire").innerText = data.humedad_aire;
-        document.getElementById("humedad_suelo").innerText = data.humedad_suelo;
-        document.getElementById("luminosidad").innerText = data.luminosidad;
-        document.getElementById("lux_p").innerText = data.luminosidad;
+        // SOLO actualizar si hay cambio real
+        let nuevoTimestamp = JSON.stringify(data);
 
-        document.getElementById("estado-sistema").innerText = "Estado: " + data.estado;
+        if (nuevoTimestamp === ultimoTimestamp) return;
 
-        // ===== RANGOS ÓPTIMOS LECHUGA CRESPA =====
+        ultimoTimestamp = nuevoTimestamp;
+
+        actualizarUI(data);
         evaluar("temp", data.temperatura, 18, 24);
         evaluar("humAir", data.humedad_aire, 60, 80);
         evaluar("humSoil", data.humedad_suelo, 65, 80);
         evaluar("lux", data.luminosidad, 60, 85);
-
-        verificarCultivo(data);
-
         actualizarGrafica(data);
     });
 
-}, 3000);
+}, 5000);
 
 
-// ==========================
-// EVALUAR TARJETAS
-// ==========================
+// ===============================
+// ACTUALIZAR UI
+// ===============================
+
+function actualizarUI(data) {
+    document.getElementById("temperatura").innerText = data.temperatura;
+    document.getElementById("humedad_aire").innerText = data.humedad_aire;
+    document.getElementById("humedad_suelo").innerText = data.humedad_suelo;
+    document.getElementById("luminosidad").innerText = data.luminosidad;
+    document.getElementById("lux_p").innerText = data.luminosidad;
+    document.getElementById("estado-sistema").innerText = "Estado: " + data.estado;
+}
+
+
+// ===============================
+// EVALUACIÓN VISUAL
+// ===============================
 
 function evaluar(id, val, min, max) {
     const el = document.getElementById(id);
-
-    if (val >= min && val <= max) {
-        el.className = "card verde";
-    } else {
-        el.className = "card rojo";
-    }
+    el.className = (val >= min && val <= max) ? "card verde" : "card rojo";
 }
 
 
-// ==========================
-// DIAGNÓSTICO GENERAL
-// ==========================
+// ===============================
+// ESTADO ESPECIAL
+// ===============================
 
-function verificarCultivo(data) {
-
-    const box = document.getElementById("mensaje-adecuado");
-
-    if (data.estado === "ÓPTIMO") {
-        box.innerText = "✅ CULTIVO ADECUADO: CONDICIONES ÓPTIMAS";
-        box.className = "diagnostico-box estado-adecuado";
-    }
-    else if (data.estado.includes("ALERTA")) {
-        box.innerText = "⚠ ALERTA: " + data.estado;
-        box.className = "diagnostico-box estado-alerta";
-    }
-}
-
-
-// ==========================
-// MOSTRAR APAGADO
-// ==========================
-
-function mostrarApagado() {
+function mostrarEstadoEspecial(estado) {
 
     const stTxt = document.getElementById("estado-sistema");
     const diag = document.getElementById("mensaje-adecuado");
 
-    stTxt.innerText = "SISTEMA APAGADO";
-    stTxt.style.color = "#c0392b";
+    stTxt.innerText = estado;
+    stTxt.style.color = (estado === "SISTEMA APAGADO") ? "#c0392b" : "gray";
 
-    diag.innerText = "🔴 SISTEMA FUERA DE LÍNEA";
+    diag.innerText = estado;
     diag.className = "diagnostico-box";
 
     document.querySelectorAll("span").forEach(s => s.innerText = "--");
-
-    document.querySelectorAll(".card").forEach(c => c.className = "card rojo");
 }
 
 
-// ==========================
-// MOSTRAR DESCONECTADO
-// ==========================
-
-function mostrarDesconectado() {
-
-    const stTxt = document.getElementById("estado-sistema");
-    const diag = document.getElementById("mensaje-adecuado");
-
-    stTxt.innerText = "SISTEMA DESCONECTADO";
-    stTxt.style.color = "gray";
-
-    diag.innerText = "⚡ NO SE RECIBEN DATOS DEL ESP32";
-    diag.className = "diagnostico-box";
-
-    document.querySelectorAll(".card").forEach(c => c.className = "card rojo");
-}
-
-
-// ==========================
-// ACTUALIZAR GRÁFICA
-// ==========================
+// ===============================
+// ACTUALIZAR GRÁFICA OPTIMIZADA
+// ===============================
 
 function actualizarGrafica(d) {
 
     if (!sistemaActivo) return;
 
-    if (miGrafica.data.labels.length > 15) {
+    if (miGrafica.data.labels.length > 12) {
         miGrafica.data.labels.shift();
         miGrafica.data.datasets.forEach(ds => ds.data.shift());
     }
@@ -168,9 +127,9 @@ function actualizarGrafica(d) {
 }
 
 
-// ==========================
-// CONTROL SISTEMA (BOTONES)
-// ==========================
+// ===============================
+// CONTROL SISTEMA
+// ===============================
 
 function controlSistema(accion) {
 
@@ -178,9 +137,6 @@ function controlSistema(accion) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accion: accion })
-    })
-    .then(res => res.json())
-    .then(data => {
-        console.log("Sistema:", data);
     });
 }
+
