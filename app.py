@@ -1,6 +1,6 @@
 from flask import Flask, render_template, jsonify, request
 import json
-
+import time
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
 # ===== DATOS GLOBALES =====
@@ -10,7 +10,8 @@ datos_actuales = {
     "humedad_suelo": 0,
     "luminosidad": 0,
     "lux_p": 0,
-    "estado": "SIN DATOS"
+    "estado": "SIN DATOS",
+    "ultima_actualizacion": 0
 }
 
 # ===== ENDPOINT PARA RECIBIR DATOS DEL ESP32 =====
@@ -18,21 +19,20 @@ datos_actuales = {
 def recibir_datos():
     global datos_actuales
 
-    try:
-        payload = request.json
+    payload = request.json
 
-        datos_actuales = {
-            "temperatura": round(payload.get("temperatura", 0), 1),
-            "humedad_aire": round(payload.get("humedad_aire", 0), 1),
-            "humedad_suelo": payload.get("humedad_suelo", 0),
-            "luminosidad": payload.get("luminosidad", 0),
-            "lux_p": round(payload.get("lux_p", 0), 1),
-            "estado": payload.get("estado", "OK")
-        }
+    datos_actuales.update({
+        "temperatura": round(payload.get("temperatura", 0), 1),
+        "humedad_aire": round(payload.get("humedad_aire", 0), 1),
+        "humedad_suelo": payload.get("humedad_suelo", 0),
+        "luminosidad": payload.get("luminosidad", 0),
+        "lux_p": round(payload.get("lux_p", 0), 1),
+        "estado": "OK",
+        "ultima_actualizacion": time.time()
+    })
 
-        print("📥 Datos recibidos vía HTTP:", datos_actuales)
+    return {"status": "ok"}, 200
 
-        return {"status": "ok"}, 200
 
     except Exception as e:
         print("❌ Error procesando datos:", e)
@@ -47,10 +47,23 @@ def index():
 
 @app.route("/datos")
 def datos():
+    tiempo_actual = time.time()
+
+    if tiempo_actual - datos_actuales["ultima_actualizacion"] > 20:
+        return jsonify({
+            "temperatura": 0,
+            "humedad_aire": 0,
+            "humedad_suelo": 0,
+            "luminosidad": 0,
+            "lux_p": 0,
+            "estado": "DESCONECTADO"
+        })
+
     return jsonify(datos_actuales)
 
 
 # ===== INICIO =====
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
+
 
