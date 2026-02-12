@@ -3,7 +3,6 @@ import time
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
-# ===== VARIABLES GLOBALES =====
 sistema_encendido = True
 
 datos_actuales = {
@@ -11,6 +10,7 @@ datos_actuales = {
     "humedad_aire": 0,
     "humedad_suelo": 0,
     "luminosidad": 0,
+    "lux_p": 0,
     "estado": "SIN DATOS",
     "ultima_actualizacion": 0
 }
@@ -29,7 +29,6 @@ LUZ_MIN = 60
 LUZ_MAX = 85
 
 
-# ===== RECIBIR DATOS DEL ESP32 =====
 @app.route("/api/datos", methods=["POST"])
 def recibir_datos():
     global datos_actuales
@@ -48,14 +47,11 @@ def recibir_datos():
 
     if not (TEMP_MIN <= temp <= TEMP_MAX):
         estado = "ALERTA TEMPERATURA"
-
-    if not (HUM_AIRE_MIN <= hum_aire <= HUM_AIRE_MAX):
+    elif not (HUM_AIRE_MIN <= hum_aire <= HUM_AIRE_MAX):
         estado = "ALERTA HUMEDAD AIRE"
-
-    if not (HUM_SUELO_MIN <= hum_suelo <= HUM_SUELO_MAX):
+    elif not (HUM_SUELO_MIN <= hum_suelo <= HUM_SUELO_MAX):
         estado = "ALERTA HUMEDAD SUELO"
-
-    if not (LUZ_MIN <= luz <= LUZ_MAX):
+    elif not (LUZ_MIN <= luz <= LUZ_MAX):
         estado = "ALERTA LUMINOSIDAD"
 
     datos_actuales = {
@@ -63,16 +59,14 @@ def recibir_datos():
         "humedad_aire": hum_aire,
         "humedad_suelo": hum_suelo,
         "luminosidad": luz,
+        "lux_p": luz,
         "estado": estado,
         "ultima_actualizacion": time.time()
     }
 
-    print("📥 Datos recibidos:", datos_actuales)
-
     return {"status": "ok"}, 200
 
 
-# ===== CONTROL ENCENDER/APAGAR =====
 @app.route("/control", methods=["POST"])
 def control():
     global sistema_encendido
@@ -86,26 +80,13 @@ def control():
     return {"estado": sistema_encendido}
 
 
-# ===== ENVIAR DATOS A INTERFAZ =====
 @app.route("/datos")
 def datos():
     if not sistema_encendido:
-        return jsonify({
-            "temperatura": 0,
-            "humedad_aire": 0,
-            "humedad_suelo": 0,
-            "luminosidad": 0,
-            "estado": "SISTEMA APAGADO"
-        })
+        return jsonify({"estado": "SISTEMA APAGADO"})
 
-    if time.time() - datos_actuales["ultima_actualizacion"] > 20:
-        return jsonify({
-            "temperatura": 0,
-            "humedad_aire": 0,
-            "humedad_suelo": 0,
-            "luminosidad": 0,
-            "estado": "DESCONECTADO"
-        })
+    if time.time() - datos_actuales["ultima_actualizacion"] > 15:
+        return jsonify({"estado": "DESCONECTADO"})
 
     return jsonify(datos_actuales)
 
@@ -117,5 +98,4 @@ def index():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-
 
