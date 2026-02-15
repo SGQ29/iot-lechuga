@@ -30,10 +30,11 @@ def enviar_notificacion(titulo, mensaje):
                 "message": mensaje,
                 "priority": 1
             },
-            timeout=5
+            timeout=3
         )
-    except Exception as e:
-        print("Error enviando notificación:", e)
+    except:
+        pass  # Evita que bloquee el servidor
+
 
 # ==============================
 # VARIABLES GLOBALES
@@ -42,11 +43,14 @@ def enviar_notificacion(titulo, mensaje):
 sistema_encendido = True
 ultimo_estado = "SIN DATOS"
 
+# Filtro exponencial (suavizado)
+ALPHA = 0.4  # entre 0 y 1 (mayor = más rápido)
+
 datos_actuales = {
-    "temperatura": 0,
-    "humedad_aire": 0,
-    "humedad_suelo": 0,
-    "luminosidad": 0,
+    "temperatura": 0.0,
+    "humedad_aire": 0.0,
+    "humedad_suelo": 0.0,
+    "luminosidad": 0.0,
     "estado": "SIN DATOS",
     "ultima_actualizacion": 0
 }
@@ -71,7 +75,7 @@ LUZ_MAX = 85
 DB_PATH = "datos.db"
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS monitoreo
                  (timestamp REAL,
@@ -85,39 +89,12 @@ def init_db():
 
 init_db()
 
-def generar_resumen_diario():
-    hoy_inicio = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+# ==============================
+# FILTRO EXPONENCIAL
+# ==============================
 
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT temperatura, humedad_aire, humedad_suelo, luminosidad, estado FROM monitoreo WHERE timestamp >= ?", (hoy_inicio,))
-    registros = c.fetchall()
-    conn.close()
-
-    if not registros:
-        return "No hay registros hoy."
-
-    temps = [r[0] for r in registros]
-    hum_aire = [r[1] for r in registros]
-    hum_suelo = [r[2] for r in registros]
-    luz = [r[3] for r in registros]
-    alertas = [r[4] for r in registros if "ALERTA" in r[4]]
-
-    resumen = f"""
-📊 RESUMEN DEL DÍA
-
-Registros totales: {len(registros)}
-Alertas totales: {len(alertas)}
-
-Temperatura Promedio: {round(sum(temps)/len(temps),1)}°C
-Máxima: {max(temps)}°C
-Mínima: {min(temps)}°C
-
-Humedad Aire Promedio: {round(sum(hum_aire)/len(hum_aire),1)}%
-Humedad Suelo Promedio: {round(sum(hum_suelo)/len(hum_suelo),1)}%
-Luminosidad Promedio: {round(sum(luz)/len(luz),1)}%
-"""
-    return resumen
+def ema(valor_nuevo, valor_anterior):
+    return (ALPHA * valor_nuevo) + ((1 - ALPHA) * valor_anterior)
 
 # ==============================
 # RECIBIR DATOS ESP32
@@ -131,11 +108,20 @@ def recibir_datos():
         return {"status": "apagado"}, 403
 
     payload = request.json
+    timestamp = time.time()
 
-    temp = round(payload.get("temperatura", 0), 1)
-    hum_aire = round(payload.get("humedad_aire", 0), 1)
-    hum_suelo = payload.get("humedad_suelo", 0)
-    luz = payload.get("luminosidad", 0)
+    # ==========================
+    # FILTRADO SUAVE
+    # ==========================
+
+    temp = round(ema(payload.get("temperatura", 0), datos_actuales["temperatura"]), 1)
+    hum_aire = round(ema(payload.get("humedad_aire", 0), datos_actuales["humedad_aire"]), 1)
+    hum_suelo = round(ema(payload.get("humedad_suelo", 0), datos_actuales["humedad_suelo"]), 1)
+    luz = round(ema(payload.get("luminosidad", 0), datos_actuales["luminosidad"]), 1)
+
+    # ==========================
+    # VALIDACIÓN RANGOS
+    # ==========================
 
     alertas = []
 
@@ -150,7 +136,9 @@ def recibir_datos():
 
     estado = "ÓPTIMO" if not alertas else "ALERTA: " + ", ".join(alertas)
 
-    timestamp = time.time()
+    # ==========================
+    # GUARDAR EN BASE
+    # ==========================
 
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -159,10 +147,13 @@ def recibir_datos():
                   (timestamp, temp, hum_aire, hum_suelo, luz, estado))
         conn.commit()
         conn.close()
-    except Exception as e:
-        print("Error DB:", e)
+    except:
+        pass  # evita bloqueo por DB
 
-    # Notificación cambio de estado
+    # ==========================
+    # ALERTA CAMBIO ESTADO
+    # ==========================
+
     if estado != ultimo_estado and estado != "ÓPTIMO":
         mensaje = (
             f"{estado}\n\n"
@@ -175,35 +166,42 @@ def recibir_datos():
 
     ultimo_estado = estado
 
-    # Detección crítica (solo Pushover)
-    critico = False
-    if temp > 30 or temp < 15:
-        critico = True
-    if hum_aire > 90 or hum_aire < 40:
-        critico = True
-    if hum_suelo < 50:
-        critico = True
-    if luz < 30:
-        critico = True
+    # ==========================
+    # CRÍTICO
+    # ==========================
+
+    critico = (
+        temp > 30 or temp < 15 or
+        hum_aire > 90 or hum_aire < 40 or
+        hum_suelo < 50 or
+        luz < 30
+    )
 
     if critico and not evento_critico_activo:
-        resumen = generar_resumen_diario()
-        enviar_notificacion("🚨 ALERTA CRÍTICA", resumen)
+        enviar_notificacion("🚨 ALERTA CRÍTICA", "Condiciones fuera de rango crítico")
         evento_critico_activo = True
 
     if not critico:
         evento_critico_activo = False
 
-    datos_actuales = {
+    # ==========================
+    # ACTUALIZAR DATOS
+    # ==========================
+
+    datos_actuales.update({
         "temperatura": temp,
         "humedad_aire": hum_aire,
         "humedad_suelo": hum_suelo,
         "luminosidad": luz,
         "estado": estado,
         "ultima_actualizacion": timestamp
-    }
+    })
 
     return {"status": "ok"}, 200
+
+# ==============================
+# ENDPOINTS WEB
+# ==============================
 
 @app.route("/estado")
 def estado():
@@ -227,9 +225,8 @@ def datos():
     if not sistema_encendido:
         return jsonify({"estado": "SISTEMA APAGADO"})
 
-    tiempo_sin_datos = time.time() - datos_actuales["ultima_actualizacion"]
-
-    if tiempo_sin_datos > 40:
+    # ahora solo 15 segundos para marcar desconectado
+    if time.time() - datos_actuales["ultima_actualizacion"] > 15:
         return jsonify({
             "estado": "DESCONECTADO",
             "temperatura": 0,
@@ -246,3 +243,4 @@ def index():
 
 if __name__ == "__main__":
     app.run()
+
