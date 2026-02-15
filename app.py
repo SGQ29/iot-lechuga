@@ -287,16 +287,27 @@ def control():
 
 @app.route("/datos")
 def datos():
+
     if not sistema_encendido:
         return jsonify({"estado": "SISTEMA APAGADO"})
-    if time.time() - datos_actuales["ultima_actualizacion"] > 15:
-        return jsonify({"estado": "DESCONECTADO"})
-    return jsonify(datos_actuales)
 
+    tiempo_sin_datos = time.time() - datos_actuales["ultima_actualizacion"]
+
+    if tiempo_sin_datos > 40:
+        return jsonify({
+            "estado": "DESCONECTADO",
+            "temperatura": 0,
+            "humedad_aire": 0,
+            "humedad_suelo": 0,
+            "luminosidad": 0
+        })
+
+    return jsonify(datos_actuales)
 @app.route("/")
 def index():
     return render_template("index.html")
 
 if __name__ == "__main__":
     app.run()
+
 
