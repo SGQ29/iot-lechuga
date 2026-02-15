@@ -10,8 +10,8 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 # CONFIGURACIÓN PUSHOVER
 # ==============================
 
-PUSHOVER_USER = os.environ.get("ujv1fjyjt32zgc7zn8u9uq97pn6i5j")
-PUSHOVER_TOKEN = os.environ.get("ad358ypedc4ygbqvvw86h5ix1oinnc")
+PUSHOVER_USER = os.environ.get("PUSHOVER_USER")
+PUSHOVER_TOKEN = os.environ.get("PUSHOVER_TOKEN")
 
 def enviar_notificacion(titulo, mensaje):
     if not PUSHOVER_USER or not PUSHOVER_TOKEN:
@@ -186,4 +186,5 @@ def index():
 
 if __name__ == "__main__":
     app.run()
+
 
