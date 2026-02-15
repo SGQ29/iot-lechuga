@@ -3,9 +3,8 @@ import time
 import sqlite3
 import requests
 import os
-from datetime import datetime
 
-app = Flask(__name__, template_folder="templates", static_folder="static")
+app = Flask(__name__)
 
 # ==============================
 # CONFIGURACIÓN PUSHOVER
@@ -19,7 +18,6 @@ evento_critico_activo = False
 def enviar_notificacion(titulo, mensaje):
     if not PUSHOVER_USER or not PUSHOVER_TOKEN:
         return
-
     try:
         requests.post(
             "https://api.pushover.net/1/messages.json",
@@ -33,7 +31,7 @@ def enviar_notificacion(titulo, mensaje):
             timeout=3
         )
     except:
-        pass  # Evita que bloquee el servidor
+        pass
 
 
 # ==============================
@@ -43,8 +41,7 @@ def enviar_notificacion(titulo, mensaje):
 sistema_encendido = True
 ultimo_estado = "SIN DATOS"
 
-# Filtro exponencial (suavizado)
-ALPHA = 0.4  # entre 0 y 1 (mayor = más rápido)
+ALPHA = 0.4
 
 datos_actuales = {
     "temperatura": 0.0,
@@ -75,7 +72,7 @@ LUZ_MAX = 85
 DB_PATH = "datos.db"
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS monitoreo
                  (timestamp REAL,
@@ -90,14 +87,14 @@ def init_db():
 init_db()
 
 # ==============================
-# FILTRO EXPONENCIAL
+# FILTRO EMA
 # ==============================
 
-def ema(valor_nuevo, valor_anterior):
-    return (ALPHA * valor_nuevo) + ((1 - ALPHA) * valor_anterior)
+def ema(nuevo, anterior):
+    return (ALPHA * nuevo) + ((1 - ALPHA) * anterior)
 
 # ==============================
-# RECIBIR DATOS ESP32
+# API RECEPCIÓN ESP32
 # ==============================
 
 @app.route("/api/datos", methods=["POST"])
@@ -107,21 +104,13 @@ def recibir_datos():
     if not sistema_encendido:
         return {"status": "apagado"}, 403
 
-    payload = request.json
+    payload = request.get_json(force=True)
     timestamp = time.time()
-
-    # ==========================
-    # FILTRADO SUAVE
-    # ==========================
 
     temp = round(ema(payload.get("temperatura", 0), datos_actuales["temperatura"]), 1)
     hum_aire = round(ema(payload.get("humedad_aire", 0), datos_actuales["humedad_aire"]), 1)
     hum_suelo = round(ema(payload.get("humedad_suelo", 0), datos_actuales["humedad_suelo"]), 1)
     luz = round(ema(payload.get("luminosidad", 0), datos_actuales["luminosidad"]), 1)
-
-    # ==========================
-    # VALIDACIÓN RANGOS
-    # ==========================
 
     alertas = []
 
@@ -136,10 +125,6 @@ def recibir_datos():
 
     estado = "ÓPTIMO" if not alertas else "ALERTA: " + ", ".join(alertas)
 
-    # ==========================
-    # GUARDAR EN BASE
-    # ==========================
-
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
@@ -148,45 +133,12 @@ def recibir_datos():
         conn.commit()
         conn.close()
     except:
-        pass  # evita bloqueo por DB
-
-    # ==========================
-    # ALERTA CAMBIO ESTADO
-    # ==========================
+        pass
 
     if estado != ultimo_estado and estado != "ÓPTIMO":
-        mensaje = (
-            f"{estado}\n\n"
-            f"🌡 Temp: {temp}°C\n"
-            f"💧 H.Aire: {hum_aire}%\n"
-            f"🌱 H.Suelo: {hum_suelo}%\n"
-            f"☀ Luz: {luz}%"
-        )
-        enviar_notificacion("⚠ ALERTA CULTIVO LECHUGA", mensaje)
+        enviar_notificacion("⚠ ALERTA CULTIVO", estado)
 
     ultimo_estado = estado
-
-    # ==========================
-    # CRÍTICO
-    # ==========================
-
-    critico = (
-        temp > 30 or temp < 15 or
-        hum_aire > 90 or hum_aire < 40 or
-        hum_suelo < 50 or
-        luz < 30
-    )
-
-    if critico and not evento_critico_activo:
-        enviar_notificacion("🚨 ALERTA CRÍTICA", "Condiciones fuera de rango crítico")
-        evento_critico_activo = True
-
-    if not critico:
-        evento_critico_activo = False
-
-    # ==========================
-    # ACTUALIZAR DATOS
-    # ==========================
 
     datos_actuales.update({
         "temperatura": temp,
@@ -199,48 +151,29 @@ def recibir_datos():
 
     return {"status": "ok"}, 200
 
+
 # ==============================
 # ENDPOINTS WEB
 # ==============================
+
+@app.route("/")
+def home():
+    return render_template("index.html")
+
 
 @app.route("/estado")
 def estado():
     return jsonify({"estado": sistema_encendido})
 
-@app.route("/control", methods=["POST"])
-def control():
-    global sistema_encendido
-    data = request.json
-
-    if data["accion"] == "apagar":
-        sistema_encendido = False
-    elif data["accion"] == "encender":
-        sistema_encendido = True
-
-    return {"estado": sistema_encendido}
 
 @app.route("/datos")
 def datos():
-
-    if not sistema_encendido:
-        return jsonify({"estado": "SISTEMA APAGADO"})
-
-    # ahora solo 15 segundos para marcar desconectado
     if time.time() - datos_actuales["ultima_actualizacion"] > 15:
-        return jsonify({
-            "estado": "DESCONECTADO",
-            "temperatura": 0,
-            "humedad_aire": 0,
-            "humedad_suelo": 0,
-            "luminosidad": 0
-        })
-
+        return jsonify({"estado": "DESCONECTADO"})
     return jsonify(datos_actuales)
 
-@app.route("/")
-def index():
-    return render_template("index.html")
 
+# IMPORTANTE PARA RENDER
 if __name__ == "__main__":
-    app.run()
-
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
