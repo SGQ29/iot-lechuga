@@ -2,6 +2,7 @@ from flask import Flask, render_template, jsonify, request
 import time
 import sqlite3
 import requests
+import os
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -9,10 +10,13 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 # CONFIGURACIÓN PUSHOVER
 # ==============================
 
-PUSHOVER_USER = "ujv1fjyjt32zgc7zn8u9uq97pn6i5j"
-PUSHOVER_TOKEN = "ad358ypedc4ygbqvvw86h5ix1oinnc"
+PUSHOVER_USER = os.environ.get("PUSHOVER_USER")
+PUSHOVER_TOKEN = os.environ.get("PUSHOVER_TOKEN")
 
-def enviar_notificacion(titulo, mensaje, prioridad=1):
+def enviar_notificacion(titulo, mensaje):
+    if not PUSHOVER_USER or not PUSHOVER_TOKEN:
+        return
+
     try:
         requests.post(
             "https://api.pushover.net/1/messages.json",
@@ -21,12 +25,12 @@ def enviar_notificacion(titulo, mensaje, prioridad=1):
                 "user": PUSHOVER_USER,
                 "title": titulo,
                 "message": mensaje,
-                "priority": prioridad
+                "priority": 1
             },
             timeout=5
         )
-    except:
-        print("Error enviando notificación")
+    except Exception as e:
+        print("Error enviando notificación:", e)
 
 
 # ==============================
@@ -35,7 +39,7 @@ def enviar_notificacion(titulo, mensaje, prioridad=1):
 
 sistema_encendido = True
 ultima_alerta = 0
-TIEMPO_ALERTA = 60  # segundos anti-spam
+TIEMPO_ALERTA = 60
 
 datos_actuales = {
     "temperatura": 0,
@@ -47,28 +51,26 @@ datos_actuales = {
 }
 
 # ==============================
-# RANGOS ÓPTIMOS LECHUGA CRESPA
+# RANGOS ÓPTIMOS
 # ==============================
 
 TEMP_MIN = 18
 TEMP_MAX = 24
-
 HUM_AIRE_MIN = 60
 HUM_AIRE_MAX = 80
-
 HUM_SUELO_MIN = 65
 HUM_SUELO_MAX = 80
-
 LUZ_MIN = 60
 LUZ_MAX = 85
 
+# ==============================
+# BASE DE DATOS (RENDER SAFE)
+# ==============================
 
-# ==============================
-# BASE DE DATOS SQLITE
-# ==============================
+DB_PATH = "datos.db"
 
 def init_db():
-    conn = sqlite3.connect("datos.db")
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS monitoreo
                  (timestamp REAL,
@@ -82,9 +84,8 @@ def init_db():
 
 init_db()
 
-
 # ==============================
-# API RECIBIR DATOS DEL ESP32
+# RECIBIR DATOS ESP32
 # ==============================
 
 @app.route("/api/datos", methods=["POST"])
@@ -114,26 +115,26 @@ def recibir_datos():
 
     timestamp = time.time()
 
-    # Guardar en base de datos
-    conn = sqlite3.connect("datos.db")
-    c = conn.cursor()
-    c.execute("INSERT INTO monitoreo VALUES (?,?,?,?,?,?)",
-              (timestamp, temp, hum_aire, hum_suelo, luz, estado))
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("INSERT INTO monitoreo VALUES (?,?,?,?,?,?)",
+                  (timestamp, temp, hum_aire, hum_suelo, luz, estado))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print("Error DB:", e)
 
-    # Enviar notificación si hay alerta (anti-spam)
+    # Notificación anti-spam
     if estado != "ÓPTIMO" and (time.time() - ultima_alerta > TIEMPO_ALERTA):
-
         mensaje = (
             f"{estado}\n\n"
-            f"🌡 Temp: {temp}°C\n"
-            f"💧 H.Aire: {hum_aire}%\n"
-            f"🌱 H.Suelo: {hum_suelo}%\n"
-            f"☀ Luz: {luz}%"
+            f"Temp: {temp}°C\n"
+            f"H.Aire: {hum_aire}%\n"
+            f"H.Suelo: {hum_suelo}%\n"
+            f"Luz: {luz}%"
         )
-
-        enviar_notificacion("⚠ ALERTA CULTIVO LECHUGA", mensaje)
+        enviar_notificacion("ALERTA CULTIVO LECHUGA", mensaje)
         ultima_alerta = time.time()
 
     datos_actuales = {
@@ -148,18 +149,10 @@ def recibir_datos():
     return {"status": "ok"}, 200
 
 
-# ==============================
-# ENDPOINT PARA ESP32 CONSULTAR ESTADO
-# ==============================
-
 @app.route("/estado")
 def estado():
     return jsonify({"estado": sistema_encendido})
 
-
-# ==============================
-# CONTROL DESDE INTERFAZ WEB
-# ==============================
 
 @app.route("/control", methods=["POST"])
 def control():
@@ -174,10 +167,6 @@ def control():
     return {"estado": sistema_encendido}
 
 
-# ==============================
-# DATOS PARA INTERFAZ WEB
-# ==============================
-
 @app.route("/datos")
 def datos():
 
@@ -190,18 +179,10 @@ def datos():
     return jsonify(datos_actuales)
 
 
-# ==============================
-# RUTA PRINCIPAL
-# ==============================
-
 @app.route("/")
 def index():
     return render_template("index.html")
 
 
-# ==============================
-# EJECUCIÓN
-# ==============================
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run()
