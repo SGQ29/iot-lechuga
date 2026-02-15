@@ -3,6 +3,10 @@ import time
 import sqlite3
 import requests
 import os
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from datetime import datetime
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -12,6 +16,12 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 
 PUSHOVER_USER = os.environ.get("PUSHOVER_USER")
 PUSHOVER_TOKEN = os.environ.get("PUSHOVER_TOKEN")
+
+EMAIL_USER = os.environ.get("EMAIL_USER")
+EMAIL_PASS = os.environ.get("EMAIL_PASS")
+EMAIL_DESTINOS = os.environ.get("EMAIL_DESTINOS", "").split(",")
+
+evento_critico_activo = False
 
 def enviar_notificacion(titulo, mensaje):
     if not PUSHOVER_USER or not PUSHOVER_TOKEN:
@@ -31,6 +41,27 @@ def enviar_notificacion(titulo, mensaje):
         )
     except Exception as e:
         print("Error enviando notificación:", e)
+
+def enviar_correo(asunto, mensaje):
+    if not EMAIL_USER or not EMAIL_PASS:
+        print("Correo no configurado")
+        return
+
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = EMAIL_USER
+        msg["To"] = ", ".join(EMAIL_DESTINOS)
+        msg["Subject"] = asunto
+        msg.attach(MIMEText(mensaje, "plain"))
+
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(EMAIL_USER, EMAIL_PASS)
+        server.sendmail(EMAIL_USER, EMAIL_DESTINOS, msg.as_string())
+        server.quit()
+
+    except Exception as e:
+        print("Error enviando correo:", e)
 
 # ==============================
 # VARIABLES GLOBALES
@@ -82,13 +113,48 @@ def init_db():
 
 init_db()
 
+def generar_resumen_diario():
+    hoy_inicio = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT temperatura, humedad_aire, humedad_suelo, luminosidad, estado FROM monitoreo WHERE timestamp >= ?", (hoy_inicio,))
+    registros = c.fetchall()
+    conn.close()
+
+    if not registros:
+        return "No hay registros hoy."
+
+    temps = [r[0] for r in registros]
+    hum_aire = [r[1] for r in registros]
+    hum_suelo = [r[2] for r in registros]
+    luz = [r[3] for r in registros]
+    alertas = [r[4] for r in registros if "ALERTA" in r[4]]
+
+    resumen = f"""
+📊 RESUMEN DEL DÍA
+
+Registros totales: {len(registros)}
+Alertas totales: {len(alertas)}
+
+Temperatura:
+Promedio: {round(sum(temps)/len(temps),1)}°C
+Máxima: {max(temps)}°C
+Mínima: {min(temps)}°C
+
+Humedad Aire Promedio: {round(sum(hum_aire)/len(hum_aire),1)}%
+Humedad Suelo Promedio: {round(sum(hum_suelo)/len(hum_suelo),1)}%
+Luminosidad Promedio: {round(sum(luz)/len(luz),1)}%
+"""
+    return resumen
+
 # ==============================
 # RECIBIR DATOS ESP32
 # ==============================
 
 @app.route("/api/datos", methods=["POST"])
 def recibir_datos():
-    global datos_actuales, ultimo_estado
+    global datos_actuales, ultimo_estado, evento_critico_activo
 
     if not sistema_encendido:
         return {"status": "apagado"}, 403
@@ -100,21 +166,14 @@ def recibir_datos():
     hum_suelo = payload.get("humedad_suelo", 0)
     luz = payload.get("luminosidad", 0)
 
-    # ==============================
-    # DETECCIÓN DE ALERTAS MÚLTIPLES
-    # ==============================
-
     alertas = []
 
     if not (TEMP_MIN <= temp <= TEMP_MAX):
         alertas.append("TEMPERATURA")
-
     if not (HUM_AIRE_MIN <= hum_aire <= HUM_AIRE_MAX):
         alertas.append("HUMEDAD AIRE")
-
     if not (HUM_SUELO_MIN <= hum_suelo <= HUM_SUELO_MAX):
         alertas.append("HUMEDAD SUELO")
-
     if not (LUZ_MIN <= luz <= LUZ_MAX):
         alertas.append("LUMINOSIDAD")
 
@@ -124,10 +183,6 @@ def recibir_datos():
         estado = "ALERTA: " + ", ".join(alertas)
 
     timestamp = time.time()
-
-    # ==============================
-    # GUARDAR EN BASE DE DATOS
-    # ==============================
 
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -140,11 +195,10 @@ def recibir_datos():
         print("Error DB:", e)
 
     # ==============================
-    # NOTIFICACIÓN SOLO CUANDO CAMBIA EL ESTADO
+    # NOTIFICACIÓN PUSHOVER
     # ==============================
 
     if estado != ultimo_estado and estado != "ÓPTIMO":
-
         mensaje = (
             f"{estado}\n\n"
             f"🌡 Temp: {temp}°C\n"
@@ -152,14 +206,57 @@ def recibir_datos():
             f"🌱 H.Suelo: {hum_suelo}%\n"
             f"☀ Luz: {luz}%"
         )
-
         enviar_notificacion("⚠ ALERTA CULTIVO LECHUGA", mensaje)
 
     ultimo_estado = estado
 
     # ==============================
-    # ACTUALIZAR DATOS ACTUALES
+    # DETECCIÓN CRÍTICA
     # ==============================
+
+    critico = False
+    recomendaciones = []
+
+    if temp > 30 or temp < 15:
+        critico = True
+        recomendaciones.append("🌡 Revisar ventilación o sombreado.")
+
+    if hum_aire > 90 or hum_aire < 40:
+        critico = True
+        recomendaciones.append("💧 Mejorar ventilación para evitar hongos.")
+
+    if hum_suelo < 50:
+        critico = True
+        recomendaciones.append("🌱 Activar riego por goteo.")
+
+    if luz < 30:
+        critico = True
+        recomendaciones.append("☀ Verificar exposición solar.")
+
+    if critico and not evento_critico_activo:
+
+        resumen = generar_resumen_diario()
+
+        mensaje_correo = f"""
+🚨 ALERTA CRÍTICA DETECTADA
+
+Temperatura: {temp}°C
+Humedad Aire: {hum_aire}%
+Humedad Suelo: {hum_suelo}%
+Luminosidad: {luz}%
+
+RECOMENDACIONES:
+{chr(10).join(recomendaciones)}
+
+{resumen}
+"""
+
+        enviar_correo("🚨 ALERTA CRÍTICA - Cultivo Lechuga", mensaje_correo)
+
+        evento_critico_activo = True
+
+    if not critico:
+        evento_critico_activo = False
 
     datos_actuales = {
         "temperatura": temp,
@@ -172,17 +269,9 @@ def recibir_datos():
 
     return {"status": "ok"}, 200
 
-# ==============================
-# ESTADO DEL SISTEMA
-# ==============================
-
 @app.route("/estado")
 def estado():
     return jsonify({"estado": sistema_encendido})
-
-# ==============================
-# CONTROL ON / OFF
-# ==============================
 
 @app.route("/control", methods=["POST"])
 def control():
@@ -196,24 +285,13 @@ def control():
 
     return {"estado": sistema_encendido}
 
-# ==============================
-# OBTENER DATOS ACTUALES
-# ==============================
-
 @app.route("/datos")
 def datos():
-
     if not sistema_encendido:
         return jsonify({"estado": "SISTEMA APAGADO"})
-
     if time.time() - datos_actuales["ultima_actualizacion"] > 15:
         return jsonify({"estado": "DESCONECTADO"})
-
     return jsonify(datos_actuales)
-
-# ==============================
-# INDEX
-# ==============================
 
 @app.route("/")
 def index():
