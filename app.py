@@ -3,9 +3,6 @@ import time
 import sqlite3
 import requests
 import os
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -16,10 +13,6 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 
 PUSHOVER_USER = os.environ.get("PUSHOVER_USER")
 PUSHOVER_TOKEN = os.environ.get("PUSHOVER_TOKEN")
-
-EMAIL_USER = os.environ.get("EMAIL_USER")
-EMAIL_PASS = os.environ.get("EMAIL_PASS")
-EMAIL_DESTINOS = os.environ.get("EMAIL_DESTINOS", "").split(",")
 
 evento_critico_activo = False
 
@@ -41,27 +34,6 @@ def enviar_notificacion(titulo, mensaje):
         )
     except Exception as e:
         print("Error enviando notificación:", e)
-
-def enviar_correo(asunto, mensaje):
-    if not EMAIL_USER or not EMAIL_PASS:
-        print("Correo no configurado")
-        return
-
-    try:
-        msg = MIMEMultipart()
-        msg["From"] = EMAIL_USER
-        msg["To"] = ", ".join(EMAIL_DESTINOS)
-        msg["Subject"] = asunto
-        msg.attach(MIMEText(mensaje, "plain"))
-
-        server = smtplib.SMTP("smtp.gmail.com", 587)
-        server.starttls()
-        server.login(EMAIL_USER, EMAIL_PASS)
-        server.sendmail(EMAIL_USER, EMAIL_DESTINOS, msg.as_string())
-        server.quit()
-
-    except Exception as e:
-        print("Error enviando correo:", e)
 
 # ==============================
 # VARIABLES GLOBALES
@@ -137,8 +109,7 @@ def generar_resumen_diario():
 Registros totales: {len(registros)}
 Alertas totales: {len(alertas)}
 
-Temperatura:
-Promedio: {round(sum(temps)/len(temps),1)}°C
+Temperatura Promedio: {round(sum(temps)/len(temps),1)}°C
 Máxima: {max(temps)}°C
 Mínima: {min(temps)}°C
 
@@ -177,10 +148,7 @@ def recibir_datos():
     if not (LUZ_MIN <= luz <= LUZ_MAX):
         alertas.append("LUMINOSIDAD")
 
-    if len(alertas) == 0:
-        estado = "ÓPTIMO"
-    else:
-        estado = "ALERTA: " + ", ".join(alertas)
+    estado = "ÓPTIMO" if not alertas else "ALERTA: " + ", ".join(alertas)
 
     timestamp = time.time()
 
@@ -194,10 +162,7 @@ def recibir_datos():
     except Exception as e:
         print("Error DB:", e)
 
-    # ==============================
-    # NOTIFICACIÓN PUSHOVER
-    # ==============================
-
+    # Notificación cambio de estado
     if estado != ultimo_estado and estado != "ÓPTIMO":
         mensaje = (
             f"{estado}\n\n"
@@ -210,49 +175,20 @@ def recibir_datos():
 
     ultimo_estado = estado
 
-    # ==============================
-    # DETECCIÓN CRÍTICA
-    # ==============================
-
+    # Detección crítica (solo Pushover)
     critico = False
-    recomendaciones = []
-
     if temp > 30 or temp < 15:
         critico = True
-        recomendaciones.append("🌡 Revisar ventilación o sombreado.")
-
     if hum_aire > 90 or hum_aire < 40:
         critico = True
-        recomendaciones.append("💧 Mejorar ventilación para evitar hongos.")
-
     if hum_suelo < 50:
         critico = True
-        recomendaciones.append("🌱 Activar riego por goteo.")
-
     if luz < 30:
         critico = True
-        recomendaciones.append("☀ Verificar exposición solar.")
 
     if critico and not evento_critico_activo:
-
         resumen = generar_resumen_diario()
-
-        mensaje_correo = f"""
-🚨 ALERTA CRÍTICA DETECTADA
-
-Temperatura: {temp}°C
-Humedad Aire: {hum_aire}%
-Humedad Suelo: {hum_suelo}%
-Luminosidad: {luz}%
-
-RECOMENDACIONES:
-{chr(10).join(recomendaciones)}
-
-{resumen}
-"""
-
-        enviar_correo("🚨 ALERTA CRÍTICA - Cultivo Lechuga", mensaje_correo)
-
+        enviar_notificacion("🚨 ALERTA CRÍTICA", resumen)
         evento_critico_activo = True
 
     if not critico:
@@ -303,11 +239,10 @@ def datos():
         })
 
     return jsonify(datos_actuales)
+
 @app.route("/")
 def index():
     return render_template("index.html")
 
 if __name__ == "__main__":
     app.run()
-
-
