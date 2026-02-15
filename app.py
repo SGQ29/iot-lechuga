@@ -3,6 +3,7 @@ import time
 import sqlite3
 import requests
 import os
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -18,6 +19,7 @@ evento_critico_activo = False
 def enviar_notificacion(titulo, mensaje):
     if not PUSHOVER_USER or not PUSHOVER_TOKEN:
         return
+
     try:
         requests.post(
             "https://api.pushover.net/1/messages.json",
@@ -28,7 +30,7 @@ def enviar_notificacion(titulo, mensaje):
                 "message": mensaje,
                 "priority": 1
             },
-            timeout=3
+            timeout=5
         )
     except:
         pass
@@ -41,13 +43,11 @@ def enviar_notificacion(titulo, mensaje):
 sistema_encendido = True
 ultimo_estado = "SIN DATOS"
 
-ALPHA = 0.4
-
 datos_actuales = {
-    "temperatura": 0.0,
-    "humedad_aire": 0.0,
-    "humedad_suelo": 0.0,
-    "luminosidad": 0.0,
+    "temperatura": 0,
+    "humedad_aire": 0,
+    "humedad_suelo": 0,
+    "luminosidad": 0,
     "estado": "SIN DATOS",
     "ultima_actualizacion": 0
 }
@@ -87,14 +87,7 @@ def init_db():
 init_db()
 
 # ==============================
-# FILTRO EMA
-# ==============================
-
-def ema(nuevo, anterior):
-    return (ALPHA * nuevo) + ((1 - ALPHA) * anterior)
-
-# ==============================
-# API RECEPCIÓN ESP32
+# RECIBIR DATOS ESP32
 # ==============================
 
 @app.route("/api/datos", methods=["POST"])
@@ -105,12 +98,11 @@ def recibir_datos():
         return {"status": "apagado"}, 403
 
     payload = request.get_json(force=True)
-    timestamp = time.time()
 
-    temp = round(ema(payload.get("temperatura", 0), datos_actuales["temperatura"]), 1)
-    hum_aire = round(ema(payload.get("humedad_aire", 0), datos_actuales["humedad_aire"]), 1)
-    hum_suelo = round(ema(payload.get("humedad_suelo", 0), datos_actuales["humedad_suelo"]), 1)
-    luz = round(ema(payload.get("luminosidad", 0), datos_actuales["luminosidad"]), 1)
+    temp = round(payload.get("temperatura", 0), 1)
+    hum_aire = round(payload.get("humedad_aire", 0), 1)
+    hum_suelo = payload.get("humedad_suelo", 0)
+    luz = payload.get("luminosidad", 0)
 
     alertas = []
 
@@ -125,6 +117,8 @@ def recibir_datos():
 
     estado = "ÓPTIMO" if not alertas else "ALERTA: " + ", ".join(alertas)
 
+    timestamp = time.time()
+
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
@@ -135,19 +129,27 @@ def recibir_datos():
     except:
         pass
 
+    # Enviar alerta solo cuando cambia estado
     if estado != ultimo_estado and estado != "ÓPTIMO":
-        enviar_notificacion("⚠ ALERTA CULTIVO", estado)
+        mensaje = (
+            f"{estado}\n\n"
+            f"🌡 Temp: {temp}°C\n"
+            f"💧 H.Aire: {hum_aire}%\n"
+            f"🌱 H.Suelo: {hum_suelo}%\n"
+            f"☀ Luz: {luz}%"
+        )
+        enviar_notificacion("⚠ ALERTA CULTIVO LECHUGA", mensaje)
 
     ultimo_estado = estado
 
-    datos_actuales.update({
+    datos_actuales = {
         "temperatura": temp,
         "humedad_aire": hum_aire,
         "humedad_suelo": hum_suelo,
         "luminosidad": luz,
         "estado": estado,
         "ultima_actualizacion": timestamp
-    })
+    }
 
     return {"status": "ok"}, 200
 
@@ -157,23 +159,35 @@ def recibir_datos():
 # ==============================
 
 @app.route("/")
-def home():
+def index():
     return render_template("index.html")
-
 
 @app.route("/estado")
 def estado():
     return jsonify({"estado": sistema_encendido})
 
-
 @app.route("/datos")
 def datos():
-    if time.time() - datos_actuales["ultima_actualizacion"] > 15:
-        return jsonify({"estado": "DESCONECTADO"})
+
+    if not sistema_encendido:
+        return jsonify({"estado": "SISTEMA APAGADO"})
+
+    if time.time() - datos_actuales["ultima_actualizacion"] > 40:
+        return jsonify({
+            "estado": "DESCONECTADO",
+            "temperatura": 0,
+            "humedad_aire": 0,
+            "humedad_suelo": 0,
+            "luminosidad": 0
+        })
+
     return jsonify(datos_actuales)
 
 
-# IMPORTANTE PARA RENDER
+# ==============================
+# RENDER COMPATIBLE
+# ==============================
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
