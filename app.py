@@ -32,14 +32,12 @@ def enviar_notificacion(titulo, mensaje):
     except Exception as e:
         print("Error enviando notificación:", e)
 
-
 # ==============================
 # VARIABLES GLOBALES
 # ==============================
 
 sistema_encendido = True
-ultima_alerta = 0
-TIEMPO_ALERTA = 60
+ultimo_estado = "SIN DATOS"
 
 datos_actuales = {
     "temperatura": 0,
@@ -64,7 +62,7 @@ LUZ_MIN = 60
 LUZ_MAX = 85
 
 # ==============================
-# BASE DE DATOS (RENDER SAFE)
+# BASE DE DATOS
 # ==============================
 
 DB_PATH = "datos.db"
@@ -90,7 +88,7 @@ init_db()
 
 @app.route("/api/datos", methods=["POST"])
 def recibir_datos():
-    global datos_actuales, ultima_alerta
+    global datos_actuales, ultimo_estado
 
     if not sistema_encendido:
         return {"status": "apagado"}, 403
@@ -102,18 +100,34 @@ def recibir_datos():
     hum_suelo = payload.get("humedad_suelo", 0)
     luz = payload.get("luminosidad", 0)
 
-    estado = "ÓPTIMO"
+    # ==============================
+    # DETECCIÓN DE ALERTAS MÚLTIPLES
+    # ==============================
+
+    alertas = []
 
     if not (TEMP_MIN <= temp <= TEMP_MAX):
-        estado = "ALERTA TEMPERATURA"
-    elif not (HUM_AIRE_MIN <= hum_aire <= HUM_AIRE_MAX):
-        estado = "ALERTA HUMEDAD AIRE"
-    elif not (HUM_SUELO_MIN <= hum_suelo <= HUM_SUELO_MAX):
-        estado = "ALERTA HUMEDAD SUELO"
-    elif not (LUZ_MIN <= luz <= LUZ_MAX):
-        estado = "ALERTA LUMINOSIDAD"
+        alertas.append("TEMPERATURA")
+
+    if not (HUM_AIRE_MIN <= hum_aire <= HUM_AIRE_MAX):
+        alertas.append("HUMEDAD AIRE")
+
+    if not (HUM_SUELO_MIN <= hum_suelo <= HUM_SUELO_MAX):
+        alertas.append("HUMEDAD SUELO")
+
+    if not (LUZ_MIN <= luz <= LUZ_MAX):
+        alertas.append("LUMINOSIDAD")
+
+    if len(alertas) == 0:
+        estado = "ÓPTIMO"
+    else:
+        estado = "ALERTA: " + ", ".join(alertas)
 
     timestamp = time.time()
+
+    # ==============================
+    # GUARDAR EN BASE DE DATOS
+    # ==============================
 
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -125,17 +139,27 @@ def recibir_datos():
     except Exception as e:
         print("Error DB:", e)
 
-    # Notificación anti-spam
-    if estado != "ÓPTIMO" and (time.time() - ultima_alerta > TIEMPO_ALERTA):
+    # ==============================
+    # NOTIFICACIÓN SOLO CUANDO CAMBIA EL ESTADO
+    # ==============================
+
+    if estado != ultimo_estado and estado != "ÓPTIMO":
+
         mensaje = (
             f"{estado}\n\n"
-            f"Temp: {temp}°C\n"
-            f"H.Aire: {hum_aire}%\n"
-            f"H.Suelo: {hum_suelo}%\n"
-            f"Luz: {luz}%"
+            f"🌡 Temp: {temp}°C\n"
+            f"💧 H.Aire: {hum_aire}%\n"
+            f"🌱 H.Suelo: {hum_suelo}%\n"
+            f"☀ Luz: {luz}%"
         )
-        enviar_notificacion("ALERTA CULTIVO LECHUGA", mensaje)
-        ultima_alerta = time.time()
+
+        enviar_notificacion("⚠ ALERTA CULTIVO LECHUGA", mensaje)
+
+    ultimo_estado = estado
+
+    # ==============================
+    # ACTUALIZAR DATOS ACTUALES
+    # ==============================
 
     datos_actuales = {
         "temperatura": temp,
@@ -148,11 +172,17 @@ def recibir_datos():
 
     return {"status": "ok"}, 200
 
+# ==============================
+# ESTADO DEL SISTEMA
+# ==============================
 
 @app.route("/estado")
 def estado():
     return jsonify({"estado": sistema_encendido})
 
+# ==============================
+# CONTROL ON / OFF
+# ==============================
 
 @app.route("/control", methods=["POST"])
 def control():
@@ -166,6 +196,9 @@ def control():
 
     return {"estado": sistema_encendido}
 
+# ==============================
+# OBTENER DATOS ACTUALES
+# ==============================
 
 @app.route("/datos")
 def datos():
@@ -178,13 +211,14 @@ def datos():
 
     return jsonify(datos_actuales)
 
+# ==============================
+# INDEX
+# ==============================
 
 @app.route("/")
 def index():
     return render_template("index.html")
 
-
 if __name__ == "__main__":
     app.run()
-
 
