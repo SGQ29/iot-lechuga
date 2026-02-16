@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Monitoreo IoT - Lechuga Crespa</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -15,25 +16,52 @@
             <div id="mensaje-adecuado" class="diagnostico-box">Esperando datos del sistema...</div>
         </div>
 
-        <div class="card" id="temp">🌡 Temperatura: <span id="temperatura">--</span> °C</div>
-        <div class="card" id="humAir">💧 Humedad aire: <span id="humedad_aire">--</span> %</div>
-        <div class="card" id="humSoil">🌱 Humedad suelo: <span id="humedad_suelo">--</span> %</div>
-        <div class="card" id="lux">☀ Luminosidad: <span id="luminosidad">--</span> µmol/m²/s (<span id="lux_p">--</span>%)</div>
+        <div class="grid-cards">
+            <div class="card" id="temp">🌡 Temperatura: <span id="temperatura">--</span> °C</div>
+            <div class="card" id="humAir">💧 Humedad aire: <span id="humedad_aire">--</span> %</div>
+            <div class="card" id="humSoil">🌱 Humedad suelo: <span id="humedad_suelo">--</span> %</div>
+            <div class="card" id="lux">☀ Luminosidad: <span id="luminosidad">--</span> µmol/m²/s (<span id="lux_p">--</span>%)</div>
+        </div>
 
         <div class="botones">
             <button class="on" onclick="controlSistema('on')">🟢 ENCENDER</button>
             <button class="off" onclick="controlSistema('off')">🔴 APAGAR</button>
         </div>
 
-        <canvas id="graficoMultivariable"></canvas>
+        <div class="chart-container">
+            <canvas id="graficoMultivariable"></canvas>
+        </div>
 
         <div id="estado-sistema" class="estado">Estado: --</div>
+
+        <hr>
+
+        <div class="historial-section">
+            <h3>📋 Historial de registros</h3>
+            <div class="botones-historial">
+                <button onclick="cargarHistorial()">Mostrar historial</button>
+                <button onclick="descargarHistorial()">Descargar CSV</button>
+            </div>
+            
+            <div class="table-wrapper">
+                <table id="tabla-historial" border="1">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Temp</th>
+                            <th>H.Aire</th>
+                            <th>H.Suelo</th>
+                            <th>Luz</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        </tbody>
+                </table>
+            </div>
+        </div>
     </div>
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
-</body>
-</html>
 
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>
-
