@@ -1,61 +1,68 @@
-let ctx = document.getElementById("graficoMultivariable").getContext("2d");
+let miGrafica;
 let sistemaActivo = true;
 
-let miGrafica = new Chart(ctx, {
-    type: "line",
-    data: {
-        labels: [],
-        datasets: [
-            { label: "Temp", data: [], borderColor: "#e74c3c", tension: 0.3 },
-            { label: "H.Aire", data: [], borderColor: "#3498db", tension: 0.3 },
-            { label: "H.Suelo", data: [], borderColor: "#e67e22", tension: 0.3 },
-            { label: "Luz", data: [], borderColor: "#f1c40f", tension: 0.3 }
-        ]
-    },
-    options: { animation: false, responsive: true, scales: { y: { min: 0, max: 100 } } }
-});
+// Inicialización segura de la gráfica al cargar la página
+window.onload = function() {
+    let canvas = document.getElementById("graficoMultivariable");
+    if (canvas) {
+        let ctx = canvas.getContext("2d");
+        miGrafica = new Chart(ctx, {
+            type: "line",
+            data: {
+                labels: [],
+                datasets: [
+                    { label: "Temp", data: [], borderColor: "#e74c3c", tension: 0.3 },
+                    { label: "H.Aire", data: [], borderColor: "#3498db", tension: 0.3 },
+                    { label: "H.Suelo", data: [], borderColor: "#e67e22", tension: 0.3 },
+                    { label: "Luz", data: [], borderColor: "#f1c40f", tension: 0.3 }
+                ]
+            },
+            options: { animation: false, responsive: true, scales: { y: { min: 0, max: 100 } } }
+        });
+    }
+};
 
+// Bucle de actualización
 setInterval(() => {
     if (!sistemaActivo) return;
-    fetch("/datos").then(res => res.json()).then(data => {
-        if (data.estado === "SISTEMA APAGADO") { apagarUI(); return; }
-        actualizarUI(data);
-        actualizarGrafica(data);
-    });
-}, 1000);
+    fetch("/datos")
+        .then(res => res.json())
+        .then(data => {
+            if (data.estado === "SISTEMA APAGADO") { 
+                apagarUI(); 
+            } else {
+                actualizarUI(data);
+                if (miGrafica) actualizarGrafica(data);
+            }
+        })
+        .catch(err => console.error("Error al obtener datos:", err));
+}, 2000);
 
 function actualizarUI(data) {
-    try {
-        // Usamos || 0 para asegurar que siempre haya un número
-        document.getElementById("temperatura").innerText = data.temperatura || 0;
-        document.getElementById("humedad_aire").innerText = data.humedad_aire || 0;
-        document.getElementById("humedad_suelo").innerText = data.humedad_suelo || 0;
-        document.getElementById("luminosidad").innerText = data.luminosidad || 0;
-        
-        // Verificamos si existe lux_p, si no, lo calculamos o ponemos 0
-        const luxPElement = document.getElementById("lux_p");
-        if (luxPElement) {
-            luxPElement.innerText = data.lux_p || 0;
-        }
+    document.getElementById("temperatura").innerText = data.temperatura ?? "--";
+    document.getElementById("humedad_aire").innerText = data.humedad_aire ?? "--";
+    document.getElementById("humedad_suelo").innerText = data.humedad_suelo ?? "--";
+    document.getElementById("luminosidad").innerText = data.luminosidad ?? "--";
+    
+    const luxPElement = document.getElementById("lux_p");
+    if (luxPElement) luxPElement.innerText = data.lux_p || 0;
 
-        evaluar("temp", data.temperatura, 18, 24);
-        evaluar("humAir", data.humedad_aire, 60, 80);
-        evaluar("humSoil", data.humedad_suelo, 65, 80);
-        evaluar("lux", data.luminosidad, 60, 85);
+    evaluar("temp", data.temperatura, 18, 24);
+    evaluar("humAir", data.humedad_aire, 60, 80);
+    evaluar("humSoil", data.humedad_suelo, 65, 80);
+    evaluar("lux", data.luminosidad, 60, 85);
 
-        verificarCultivo(data);
-    } catch (error) {
-        console.error("Error visualizando datos:", error);
-    }
+    verificarCultivo(data);
 }
 
 function evaluar(id, val, min, max) {
     const el = document.getElementById(id);
-    el.className = (val >= min && val <= max) ? "card verde" : "card rojo";
+    if (el) el.className = (val >= min && val <= max) ? "card verde" : "card rojo";
 }
 
 function verificarCultivo(data) {
     const box = document.getElementById("mensaje-adecuado");
+    if (!box) return;
     if (data.estado === "ÓPTIMO") {
         box.innerText = "✅ CULTIVO EN CONDICIONES ÓPTIMAS";
         box.className = "diagnostico-box estado-adecuado";
@@ -66,6 +73,7 @@ function verificarCultivo(data) {
 }
 
 function actualizarGrafica(d) {
+    if (!miGrafica) return;
     if (miGrafica.data.labels.length > 20) {
         miGrafica.data.labels.shift();
         miGrafica.data.datasets.forEach(ds => ds.data.shift());
@@ -83,7 +91,7 @@ function controlSistema(estado) {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({accion: estado === "on" ? "encender" : "apagar"})
-    }).then(() => {
+    }).then(res => res.json()).then(data => {
         const stTxt = document.getElementById("estado-sistema");
         if (estado === "on") {
             sistemaActivo = true;
@@ -93,7 +101,7 @@ function controlSistema(estado) {
             sistemaActivo = false;
             apagarUI();
         }
-    });
+    }).catch(err => console.error("Error en control:", err));
 }
 
 function apagarUI() {
@@ -102,9 +110,11 @@ function apagarUI() {
     document.getElementById("mensaje-adecuado").className = "diagnostico-box estado-alerta";
     document.getElementById("estado-sistema").innerText = "🔴 SISTEMA APAGADO";
     document.getElementById("estado-sistema").style.color = "#c0392b";
-    miGrafica.data.labels = [];
-    miGrafica.data.datasets.forEach(ds => ds.data = []);
-    miGrafica.update();
+    if (miGrafica) {
+        miGrafica.data.labels = [];
+        miGrafica.data.datasets.forEach(ds => ds.data = []);
+        miGrafica.update();
+    }
 }
 
 function cargarHistorial() {
@@ -119,8 +129,8 @@ function cargarHistorial() {
     });
 }
 
-function descargarHistorial() { window.location.href = "/descargar"; } el CSV
-    window.location.href = "/descargar";
+function descargarHistorial() { 
+    window.location.href = "/descargar"; 
 }
 
 
