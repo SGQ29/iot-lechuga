@@ -1,8 +1,10 @@
+/* --- ESTILOS GENERALES --- */
 body {
     font-family: 'Segoe UI', sans-serif;
     background: linear-gradient(135deg, #2c3e50, #4ca1af);
     margin: 0;
     padding: 0;
+    min-height: 100vh;
 }
 
 .container {
@@ -19,6 +21,7 @@ h1 {
     font-size: 22px;
     text-align: center;
     color: #2c3e50;
+    margin-top: 0;
 }
 
 h2 {
@@ -28,7 +31,13 @@ h2 {
     margin-bottom: 25px;
 }
 
-/* Tarjetas */
+h3 {
+    font-size: 18px;
+    color: #2d3436;
+    margin-top: 25px;
+}
+
+/* --- TARJETAS DE SENSORES --- */
 .card {
     padding: 15px;
     margin: 10px 0;
@@ -56,7 +65,7 @@ h2 {
     border-left-color: #c0392b;
 }
 
-/* Diagnóstico */
+/* --- DIAGNÓSTICO Y ALERTAS --- */
 .diagnostico-box {
     padding: 15px;
     text-align: center;
@@ -84,7 +93,7 @@ h2 {
     50% { opacity: 0.6; }
 }
 
-/* Botones */
+/* --- BOTONES DE CONTROL --- */
 .botones {
     display: flex;
     justify-content: space-between;
@@ -92,26 +101,108 @@ h2 {
 }
 
 button {
-    width: 48%;
-    padding: 12px;
-    border: none;
-    border-radius: 12px;
     cursor: pointer;
     font-weight: bold;
-    color: white;
     transition: 0.3s;
+    border: none;
 }
 
 button:hover {
     transform: scale(1.05);
 }
 
-.on { background: #2ecc71; }
-.off { background: #e74c3c; }
+.on { 
+    width: 48%;
+    padding: 12px;
+    border-radius: 12px;
+    background: #2ecc71; 
+    color: white;
+}
+
+.off { 
+    width: 48%;
+    padding: 12px;
+    border-radius: 12px;
+    background: #e74c3c; 
+    color: white;
+}
 
 .estado {
     margin-top: 15px;
     text-align: center;
     font-weight: bold;
     font-size: 14px;
+}
+
+/* --- SECCIÓN DE HISTORIAL --- */
+.botones-historial {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 15px;
+    justify-content: center;
+}
+
+.btn-historial {
+    background-color: #6c5ce7; /* MORADO MODERNO */
+    color: white;
+    padding: 10px 18px;
+    border-radius: 8px;
+    flex: 1;
+}
+
+.btn-historial:hover {
+    background-color: #4b3dbb;
+}
+
+.btn-descarga {
+    background-color: #00b894; /* VERDE TURQUESA */
+    color: white;
+    padding: 10px 18px;
+    border-radius: 8px;
+    flex: 1;
+}
+
+.btn-descarga:hover {
+    background-color: #009e7a;
+}
+
+/* --- TABLA DE DATOS --- */
+.tabla-container {
+    max-height: 300px;
+    overflow-y: auto;
+    border-radius: 10px;
+    border: 1px solid #ddd;
+    margin-top: 10px;
+}
+
+#tabla-historial {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: white;
+    font-size: 13px;
+}
+
+#tabla-historial th {
+    background-color: #2d3436;
+    color: white;
+    padding: 10px;
+    position: sticky;
+    top: 0;
+}
+
+#tabla-historial td {
+    padding: 8px;
+    border-bottom: 1px solid #eee;
+    text-align: center;
+    color: #2d3436;
+}
+
+#tabla-historial tr:nth-child(even) {
+    background-color: #f8f9fa;
+}
+
+/* Ajuste para el canvas del gráfico */
+canvas {
+    max-width: 100%;
+    margin-top: 20px;
 }
