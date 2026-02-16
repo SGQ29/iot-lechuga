@@ -25,17 +25,28 @@ setInterval(() => {
 }, 1000);
 
 function actualizarUI(data) {
-    document.getElementById("temperatura").innerText = data.temperatura ?? "--";
-    document.getElementById("humedad_aire").innerText = data.humedad_aire ?? "--";
-    document.getElementById("humedad_suelo").innerText = data.humedad_suelo ?? "--";
-    document.getElementById("luminosidad").innerText = data.luminosidad ?? "--";
-    document.getElementById("lux_p").innerText = data.lux_p ?? "0";
+    try {
+        // Usamos || 0 para asegurar que siempre haya un número
+        document.getElementById("temperatura").innerText = data.temperatura || 0;
+        document.getElementById("humedad_aire").innerText = data.humedad_aire || 0;
+        document.getElementById("humedad_suelo").innerText = data.humedad_suelo || 0;
+        document.getElementById("luminosidad").innerText = data.luminosidad || 0;
+        
+        // Verificamos si existe lux_p, si no, lo calculamos o ponemos 0
+        const luxPElement = document.getElementById("lux_p");
+        if (luxPElement) {
+            luxPElement.innerText = data.lux_p || 0;
+        }
 
-    evaluar("temp", data.temperatura, 18, 24);
-    evaluar("humAir", data.humedad_aire, 60, 80);
-    evaluar("humSoil", data.humedad_suelo, 65, 80);
-    evaluar("lux", data.luminosidad, 60, 85);
-    verificarCultivo(data);
+        evaluar("temp", data.temperatura, 18, 24);
+        evaluar("humAir", data.humedad_aire, 60, 80);
+        evaluar("humSoil", data.humedad_suelo, 65, 80);
+        evaluar("lux", data.luminosidad, 60, 85);
+
+        verificarCultivo(data);
+    } catch (error) {
+        console.error("Error visualizando datos:", error);
+    }
 }
 
 function evaluar(id, val, min, max) {
@@ -111,4 +122,5 @@ function cargarHistorial() {
 function descargarHistorial() { window.location.href = "/descargar"; } el CSV
     window.location.href = "/descargar";
 }
+
 
