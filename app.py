@@ -103,11 +103,16 @@ def control():
     try:
         data = request.get_json()
         accion = data.get("accion")
-        sistema_encendido = (accion == "encender")
+        # Forzamos el cambio de la variable global
+        if accion == "encender":
+            sistema_encendido = True
+        else:
+            sistema_encendido = False
+            
         return jsonify({"status": "ok", "sistema_encendido": sistema_encendido})
-    except:
+    except Exception as e:
+        print(f"Error en control: {e}")
         return jsonify({"status": "error"}), 400
-
 # ==============================
 # RUTAS PARA EL FRONTEND (WEB)
 # ==============================
@@ -189,3 +194,4 @@ def descargar():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
