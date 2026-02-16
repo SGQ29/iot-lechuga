@@ -94,8 +94,9 @@ init_db()
 def recibir_datos():
     global datos_actuales, ultimo_estado, evento_critico_activo
 
+    # 🔴 SI EL SISTEMA ESTÁ APAGADO → IGNORA TODO
     if not sistema_encendido:
-        return {"status": "apagado"}, 403
+        return {"status": "sistema_apagado"}, 200
 
     payload = request.get_json(force=True)
 
@@ -119,6 +120,7 @@ def recibir_datos():
 
     timestamp = time.time()
 
+    # Guardar en base
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
@@ -129,7 +131,7 @@ def recibir_datos():
     except:
         pass
 
-    # Enviar alerta solo cuando cambia estado
+    # 🔔 SOLO ENVÍA ALERTAS SI ESTÁ ENCENDIDO
     if estado != ultimo_estado and estado != "ÓPTIMO":
         mensaje = (
             f"{estado}\n\n"
@@ -172,7 +174,7 @@ def datos():
     if not sistema_encendido:
         return jsonify({"estado": "SISTEMA APAGADO"})
 
-    if time.time() - datos_actuales["ultima_actualizacion"] > 40:
+    if time.time() - datos_actuales["ultima_actualizacion"] > 30:
         return jsonify({
             "estado": "DESCONECTADO",
             "temperatura": 0,
@@ -191,3 +193,4 @@ def datos():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
