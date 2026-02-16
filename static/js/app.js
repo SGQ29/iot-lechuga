@@ -1,3 +1,4 @@
+// --- CONFIGURACIÓN INICIAL DEL GRÁFICO ---
 let ctx = document.getElementById("graficoMultivariable").getContext("2d");
 let sistemaActivo = true;
 
@@ -21,14 +22,13 @@ let miGrafica = new Chart(ctx, {
     }
 });
 
+// --- BUCLE DE MONITOREO EN TIEMPO REAL ---
 setInterval(() => {
-
     if (!sistemaActivo) return;
 
     fetch("/datos")
     .then(res => res.json())
     .then(data => {
-
         if (data.estado === "SISTEMA APAGADO") {
             apagarUI();
             return;
@@ -41,14 +41,12 @@ setInterval(() => {
 
         actualizarUI(data);
         actualizarGrafica(data);
+    })
+    .catch(err => console.error("Error obteniendo datos:", err));
+}, 800); 
 
-    });
-
-}, 800); // MÁS FLUIDO
-
-
+// --- FUNCIONES DE INTERFAZ (UI) ---
 function actualizarUI(data) {
-
     document.getElementById("temperatura").innerText = data.temperatura ?? 0;
     document.getElementById("humedad_aire").innerText = data.humedad_aire ?? 0;
     document.getElementById("humedad_suelo").innerText = data.humedad_suelo ?? 0;
@@ -63,7 +61,6 @@ function actualizarUI(data) {
     verificarCultivo(data);
 }
 
-
 function evaluar(id, val, min, max) {
     const el = document.getElementById(id);
     if (val >= min && val <= max) {
@@ -73,10 +70,8 @@ function evaluar(id, val, min, max) {
     }
 }
 
-
 function verificarCultivo(data) {
     const box = document.getElementById("mensaje-adecuado");
-
     if (data.estado === "ÓPTIMO") {
         box.innerText = "✅ CULTIVO EN CONDICIONES ÓPTIMAS";
         box.className = "diagnostico-box estado-adecuado";
@@ -86,9 +81,7 @@ function verificarCultivo(data) {
     }
 }
 
-
 function actualizarGrafica(d) {
-
     if (miGrafica.data.labels.length > 20) {
         miGrafica.data.labels.shift();
         miGrafica.data.datasets.forEach(ds => ds.data.shift());
@@ -103,9 +96,8 @@ function actualizarGrafica(d) {
     miGrafica.update("none");
 }
 
-
+// --- CONTROLES DEL SISTEMA ---
 function controlSistema(estado) {
-
     fetch("/control", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
@@ -113,7 +105,6 @@ function controlSistema(estado) {
     });
 
     const stTxt = document.getElementById("estado-sistema");
-
     if (estado === "on") {
         sistemaActivo = true;
         stTxt.innerText = "🟢 SISTEMA ACTIVO";
@@ -124,19 +115,42 @@ function controlSistema(estado) {
     }
 }
 
-
 function apagarUI() {
-
     document.querySelectorAll("span").forEach(s => s.innerText = "--");
-
     document.getElementById("mensaje-adecuado").innerText = "🔴 SISTEMA APAGADO";
     document.getElementById("mensaje-adecuado").className = "diagnostico-box estado-alerta";
-
     document.getElementById("estado-sistema").innerText = "🔴 SISTEMA APAGADO";
     document.getElementById("estado-sistema").style.color = "#c0392b";
 
     miGrafica.data.labels = [];
     miGrafica.data.datasets.forEach(ds => ds.data = []);
     miGrafica.update("none");
+}
+
+// --- GESTIÓN DEL HISTORIAL ---
+function cargarHistorial() {
+    fetch("/historial")
+    .then(res => res.json())
+    .then(data => {
+        const tbody = document.querySelector("#tabla-historial tbody");
+        tbody.innerHTML = "";
+        data.forEach(r => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${r.fecha}</td>
+                <td>${r.temperatura} °C</td>
+                <td>${r.humedad_aire} %</td>
+                <td>${r.humedad_suelo} %</td>
+                <td>${r.luminosidad}</td>
+                <td>${r.estado}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    })
+    .catch(err => console.error("Error cargando historial:", err));
+}
+
+function descargarHistorial() {
+    window.location.href = "/descargar";
 }
 
