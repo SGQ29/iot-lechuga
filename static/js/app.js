@@ -127,30 +127,32 @@ function apagarUI() {
     miGrafica.update("none");
 }
 
-// --- GESTIÓN DEL HISTORIAL ---
+// --- GESTIÓN DEL HISTORIAL (UNIFICADO Y ACOPLADO) ---
 function cargarHistorial() {
     fetch("/historial")
     .then(res => res.json())
     .then(data => {
         const tbody = document.querySelector("#tabla-historial tbody");
         tbody.innerHTML = "";
-        data.forEach(r => {
-            const tr = document.createElement("tr");
-            tr.innerHTML = `
+
+        // Mostramos solo los últimos 100 registros para optimizar rendimiento
+        data.slice(0, 100).forEach(r => {
+            const fila = document.createElement("tr");
+            fila.innerHTML = `
                 <td>${r.fecha}</td>
-                <td>${r.temperatura} °C</td>
-                <td>${r.humedad_aire} %</td>
-                <td>${r.humedad_suelo} %</td>
+                <td>${r.temperatura}</td>
+                <td>${r.humedad_aire}</td>
+                <td>${r.humedad_suelo}</td>
                 <td>${r.luminosidad}</td>
                 <td>${r.estado}</td>
             `;
-            tbody.appendChild(tr);
+            tbody.appendChild(fila);
         });
     })
     .catch(err => console.error("Error cargando historial:", err));
 }
 
 function descargarHistorial() {
+    // Redirige a la ruta de Flask que genera el CSV
     window.location.href = "/descargar";
 }
-
