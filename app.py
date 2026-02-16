@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, Response
 import time
 import sqlite3
 import requests
@@ -19,7 +19,8 @@ evento_critico_activo = False
 def enviar_notificacion(titulo, mensaje):
     if not PUSHOVER_USER or not PUSHOVER_TOKEN:
         return
-
+    if not sistema_encendido:  # ⚡ Solo si el sistema está encendido
+        return
     try:
         requests.post(
             "https://api.pushover.net/1/messages.json",
@@ -34,7 +35,6 @@ def enviar_notificacion(titulo, mensaje):
         )
     except:
         pass
-
 
 # ==============================
 # VARIABLES GLOBALES
@@ -95,7 +95,7 @@ def recibir_datos():
     global datos_actuales, ultimo_estado, evento_critico_activo
 
     if not sistema_encendido:
-        return {"status": "apagado"}, 403
+        return {"status": "sistema_apagado"}, 200
 
     payload = request.get_json(force=True)
 
@@ -105,20 +105,15 @@ def recibir_datos():
     luz = payload.get("luminosidad", 0)
 
     alertas = []
-
-    if not (TEMP_MIN <= temp <= TEMP_MAX):
-        alertas.append("TEMPERATURA")
-    if not (HUM_AIRE_MIN <= hum_aire <= HUM_AIRE_MAX):
-        alertas.append("HUMEDAD AIRE")
-    if not (HUM_SUELO_MIN <= hum_suelo <= HUM_SUELO_MAX):
-        alertas.append("HUMEDAD SUELO")
-    if not (LUZ_MIN <= luz <= LUZ_MAX):
-        alertas.append("LUMINOSIDAD")
+    if not (TEMP_MIN <= temp <= TEMP_MAX): alertas.append("TEMPERATURA")
+    if not (HUM_AIRE_MIN <= hum_aire <= HUM_AIRE_MAX): alertas.append("HUMEDAD AIRE")
+    if not (HUM_SUELO_MIN <= hum_suelo <= HUM_SUELO_MAX): alertas.append("HUMEDAD SUELO")
+    if not (LUZ_MIN <= luz <= LUZ_MAX): alertas.append("LUMINOSIDAD")
 
     estado = "ÓPTIMO" if not alertas else "ALERTA: " + ", ".join(alertas)
-
     timestamp = time.time()
 
+    # Guardar en DB
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
@@ -129,8 +124,8 @@ def recibir_datos():
     except:
         pass
 
-    # Enviar alerta solo cuando cambia estado
-    if estado != ultimo_estado and estado != "ÓPTIMO":
+    # Enviar alerta solo si cambia y está encendido
+    if sistema_encendido and estado != ultimo_estado and estado != "ÓPTIMO":
         mensaje = (
             f"{estado}\n\n"
             f"🌡 Temp: {temp}°C\n"
@@ -142,17 +137,16 @@ def recibir_datos():
 
     ultimo_estado = estado
 
-    datos_actuales = {
+    datos_actuales.update({
         "temperatura": temp,
         "humedad_aire": hum_aire,
         "humedad_suelo": hum_suelo,
         "luminosidad": luz,
         "estado": estado,
         "ultima_actualizacion": timestamp
-    }
+    })
 
     return {"status": "ok"}, 200
-
 
 # ==============================
 # ENDPOINTS WEB
@@ -168,11 +162,9 @@ def estado():
 
 @app.route("/datos")
 def datos():
-
     if not sistema_encendido:
         return jsonify({"estado": "SISTEMA APAGADO"})
-
-    if time.time() - datos_actuales["ultima_actualizacion"] > 40:
+    if time.time() - datos_actuales["ultima_actualizacion"] > 30:
         return jsonify({
             "estado": "DESCONECTADO",
             "temperatura": 0,
@@ -180,9 +172,52 @@ def datos():
             "humedad_suelo": 0,
             "luminosidad": 0
         })
-
     return jsonify(datos_actuales)
 
+# ==============================
+# HISTORIAL Y DESCARGA
+# ==============================
+
+@app.route("/historial")
+def historial():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT timestamp, temperatura, humedad_aire, humedad_suelo, luminosidad, estado FROM monitoreo ORDER BY timestamp DESC")
+    filas = c.fetchall()
+    conn.close()
+
+    registros = []
+    for f in filas:
+        fecha = datetime.fromtimestamp(f[0]).strftime("%Y-%m-%d %H:%M:%S")
+        registros.append({
+            "fecha": fecha,
+            "temperatura": f[1],
+            "humedad_aire": f[2],
+            "humedad_suelo": f[3],
+            "luminosidad": f[4],
+            "estado": f[5]
+        })
+
+    return jsonify(registros)
+
+@app.route("/descargar")
+def descargar():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM monitoreo ORDER BY timestamp DESC")
+    filas = c.fetchall()
+    conn.close()
+
+    csv_data = "Fecha,Temperatura,H.Aire,H.Suelo,Luminosidad,Estado\n"
+    for fila in filas:
+        fecha = datetime.fromtimestamp(fila[0]).strftime("%Y-%m-%d %H:%M:%S")
+        csv_data += f"{fecha},{fila[1]},{fila[2]},{fila[3]},{fila[4]},{fila[5]}\n"
+
+    return Response(
+        csv_data,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment;filename=historial.csv"}
+    )
 
 # ==============================
 # RENDER COMPATIBLE
@@ -191,4 +226,5 @@ def datos():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
 
