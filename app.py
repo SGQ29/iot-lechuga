@@ -171,9 +171,17 @@ def estado():
 @app.route("/datos")
 def datos():
 
+    # Si sistema apagado
     if not sistema_encendido:
-        return jsonify({"estado": "SISTEMA APAGADO"})
+        return jsonify({
+            "estado": "SISTEMA APAGADO",
+            "temperatura": 0,
+            "humedad_aire": 0,
+            "humedad_suelo": 0,
+            "luminosidad": 0
+        })
 
+    # Si no recibe datos en 30s
     if time.time() - datos_actuales["ultima_actualizacion"] > 30:
         return jsonify({
             "estado": "DESCONECTADO",
@@ -186,6 +194,7 @@ def datos():
     return jsonify(datos_actuales)
 
 
+
 # ==============================
 # RENDER COMPATIBLE
 # ==============================
@@ -193,4 +202,5 @@ def datos():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
 
