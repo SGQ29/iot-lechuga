@@ -1,4 +1,3 @@
-// --- CONFIGURACIÓN INICIAL DEL GRÁFICO ---
 let ctx = document.getElementById("graficoMultivariable").getContext("2d");
 let sistemaActivo = true;
 
@@ -13,61 +12,35 @@ let miGrafica = new Chart(ctx, {
             { label: "Luz", data: [], borderColor: "#f1c40f", tension: 0.3 }
         ]
     },
-    options: {
-        animation: false,
-        responsive: true,
-        scales: {
-            y: { min: 0, max: 100 }
-        }
-    }
+    options: { animation: false, responsive: true, scales: { y: { min: 0, max: 100 } } }
 });
 
-// --- BUCLE DE MONITOREO EN TIEMPO REAL ---
 setInterval(() => {
     if (!sistemaActivo) return;
-
-    fetch("/datos")
-    .then(res => res.json())
-    .then(data => {
-        if (data.estado === "SISTEMA APAGADO") {
-            apagarUI();
-            return;
-        }
-
-        if (data.estado === "DESCONECTADO") {
-            document.getElementById("mensaje-adecuado").innerText = "⚠️ DISPOSITIVO DESCONECTADO";
-            return;
-        }
-
+    fetch("/datos").then(res => res.json()).then(data => {
+        if (data.estado === "SISTEMA APAGADO") { apagarUI(); return; }
         actualizarUI(data);
         actualizarGrafica(data);
-    })
-    .catch(err => console.error("Error obteniendo datos:", err));
-}, 800); 
+    });
+}, 1000);
 
-// --- FUNCIONES DE INTERFAZ (UI) ---
 function actualizarUI(data) {
-    document.getElementById("temperatura").innerText = data.temperatura ?? 0;
-    document.getElementById("humedad_aire").innerText = data.humedad_aire ?? 0;
-    document.getElementById("humedad_suelo").innerText = data.humedad_suelo ?? 0;
-    document.getElementById("luminosidad").innerText = data.luminosidad ?? 0;
-    document.getElementById("lux_p").innerText = data.lux_p ?? 0;
+    document.getElementById("temperatura").innerText = data.temperatura ?? "--";
+    document.getElementById("humedad_aire").innerText = data.humedad_aire ?? "--";
+    document.getElementById("humedad_suelo").innerText = data.humedad_suelo ?? "--";
+    document.getElementById("luminosidad").innerText = data.luminosidad ?? "--";
+    document.getElementById("lux_p").innerText = data.lux_p ?? "0";
 
     evaluar("temp", data.temperatura, 18, 24);
     evaluar("humAir", data.humedad_aire, 60, 80);
     evaluar("humSoil", data.humedad_suelo, 65, 80);
     evaluar("lux", data.luminosidad, 60, 85);
-
     verificarCultivo(data);
 }
 
 function evaluar(id, val, min, max) {
     const el = document.getElementById(id);
-    if (val >= min && val <= max) {
-        el.className = "card verde";
-    } else {
-        el.className = "card rojo";
-    }
+    el.className = (val >= min && val <= max) ? "card verde" : "card rojo";
 }
 
 function verificarCultivo(data) {
@@ -76,7 +49,7 @@ function verificarCultivo(data) {
         box.innerText = "✅ CULTIVO EN CONDICIONES ÓPTIMAS";
         box.className = "diagnostico-box estado-adecuado";
     } else {
-        box.innerText = "⚠️ " + data.estado;
+        box.innerText = "⚠️ " + (data.estado || "ALERTA");
         box.className = "diagnostico-box estado-alerta";
     }
 }
@@ -86,33 +59,30 @@ function actualizarGrafica(d) {
         miGrafica.data.labels.shift();
         miGrafica.data.datasets.forEach(ds => ds.data.shift());
     }
-
-    miGrafica.data.labels.push("");
+    miGrafica.data.labels.push(new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}));
     miGrafica.data.datasets[0].data.push(d.temperatura);
     miGrafica.data.datasets[1].data.push(d.humedad_aire);
     miGrafica.data.datasets[2].data.push(d.humedad_suelo);
     miGrafica.data.datasets[3].data.push(d.luminosidad);
-
     miGrafica.update("none");
 }
 
-// --- CONTROLES DEL SISTEMA ---
 function controlSistema(estado) {
     fetch("/control", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({accion: estado === "on" ? "encender" : "apagar"})
+    }).then(() => {
+        const stTxt = document.getElementById("estado-sistema");
+        if (estado === "on") {
+            sistemaActivo = true;
+            stTxt.innerText = "🟢 SISTEMA ACTIVO";
+            stTxt.style.color = "#27ae60";
+        } else {
+            sistemaActivo = false;
+            apagarUI();
+        }
     });
-
-    const stTxt = document.getElementById("estado-sistema");
-    if (estado === "on") {
-        sistemaActivo = true;
-        stTxt.innerText = "🟢 SISTEMA ACTIVO";
-        stTxt.style.color = "#27ae60";
-    } else {
-        sistemaActivo = false;
-        apagarUI();
-    }
 }
 
 function apagarUI() {
@@ -121,38 +91,24 @@ function apagarUI() {
     document.getElementById("mensaje-adecuado").className = "diagnostico-box estado-alerta";
     document.getElementById("estado-sistema").innerText = "🔴 SISTEMA APAGADO";
     document.getElementById("estado-sistema").style.color = "#c0392b";
-
     miGrafica.data.labels = [];
     miGrafica.data.datasets.forEach(ds => ds.data = []);
-    miGrafica.update("none");
+    miGrafica.update();
 }
 
-// --- GESTIÓN DEL HISTORIAL (UNIFICADO Y ACOPLADO) ---
 function cargarHistorial() {
-    fetch("/historial")
-    .then(res => res.json())
-    .then(data => {
+    fetch("/historial").then(res => res.json()).then(data => {
         const tbody = document.querySelector("#tabla-historial tbody");
         tbody.innerHTML = "";
-
-        // Mostramos solo los últimos 100 registros para optimizar rendimiento
-        data.slice(0, 100).forEach(r => {
+        data.forEach(r => {
             const fila = document.createElement("tr");
-            fila.innerHTML = `
-                <td>${r.fecha}</td>
-                <td>${r.temperatura}</td>
-                <td>${r.humedad_aire}</td>
-                <td>${r.humedad_suelo}</td>
-                <td>${r.luminosidad}</td>
-                <td>${r.estado}</td>
-            `;
+            fila.innerHTML = `<td>${r.fecha}</td><td>${r.temperatura}</td><td>${r.humedad_aire}</td><td>${r.humedad_suelo}</td><td>${r.luminosidad}</td><td>${r.estado}</td>`;
             tbody.appendChild(fila);
         });
-    })
-    .catch(err => console.error("Error cargando historial:", err));
+    });
 }
 
-function descargarHistorial() {
-    // Redirige a la ruta de Flask que genera el CSV
+function descargarHistorial() { window.location.href = "/descargar"; } el CSV
     window.location.href = "/descargar";
 }
+
