@@ -64,7 +64,7 @@ def enviar_pushover(mensaje):
 
 @app.route("/api/datos", methods=["POST"])
 def recibir_datos():
-    global datos_actuales, ultimo_estado_alerta
+    global datos_actuales
     
     if not sistema_encendido:
         return jsonify({"status": "sistema_apagado"}), 200
@@ -78,27 +78,24 @@ def recibir_datos():
         luz = payload.get("luminosidad", 0)
         lux_p = payload.get("lux_p", 0) 
 
-        # Lógica de estados/alertas
+        # 1. Lógica de detección de alertas
         alertas = []
         if not (18 <= temp <= 24): alertas.append(f"TEMP ({temp}°C)")
         if not (60 <= h_aire <= 80): alertas.append(f"H.AIRE ({h_aire}%)")
         if not (65 <= h_suelo <= 80): alertas.append(f"H.SUELO ({h_suelo}%)")
         if not (60 <= luz <= 85): alertas.append(f"LUZ ({luz}%)")
 
-        estado_actual = "ÓPTIMO" if not alertas else "ALERTA"
+        # 2. Determinar estado
         resumen_estado = "ÓPTIMO" if not alertas else "ALERTA: " + ", ".join(alertas)
         ts = time.time()
 
-        # --- LÓGICA DE NOTIFICACIÓN ---
-        # Solo envía si el estado cambia de ÓPTIMO a ALERTA
-        if estado_actual == "ALERTA" and ultimo_estado_alerta == "ÓPTIMO":
-            mensaje_notif = f"Anomalía detectada:\n" + "\n".join(alertas)
+        # 3. ENVÍO INMEDIATO A PUSHOVER (Si hay alertas)
+        if alertas:
+            mensaje_notif = f"⚠️ ALERTA EN SISTEMA:\n" + "\n".join(alertas)
             enviar_pushover(mensaje_notif)
-        
-        ultimo_estado_alerta = estado_actual
-        # ------------------------------
+            print("Alerta detectada y enviada a Pushover")
 
-        # Guardado en Base de Datos
+        # 4. Guardado en Base de Datos
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute("INSERT INTO monitoreo VALUES (?,?,?,?,?,?)", 
@@ -106,6 +103,7 @@ def recibir_datos():
         conn.commit()
         conn.close()
 
+        # 5. Actualizar interfaz
         datos_actuales.update({
             "temperatura": temp, 
             "humedad_aire": h_aire, 
@@ -118,8 +116,8 @@ def recibir_datos():
         
         return jsonify({"status": "ok"}), 200
     except Exception as e:
+        print(f"Error procesando datos: {e}")
         return jsonify({"status": "error", "message": str(e)}), 400
-
 @app.route("/control", methods=["POST"])
 def control():
     global sistema_encendido
@@ -203,3 +201,4 @@ def descargar():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
