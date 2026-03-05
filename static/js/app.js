@@ -1,7 +1,6 @@
 let miGrafica;
 let sistemaActivo = true;
 
-// Inicialización segura de la gráfica al cargar la página
 window.onload = function() {
     let canvas = document.getElementById("graficoMultivariable");
     if (canvas) {
@@ -11,18 +10,71 @@ window.onload = function() {
             data: {
                 labels: [],
                 datasets: [
-                    { label: "Temp", data: [], borderColor: "#e74c3c", tension: 0.3 },
-                    { label: "H.Aire", data: [], borderColor: "#3498db", tension: 0.3 },
-                    { label: "H.Suelo", data: [], borderColor: "#e67e22", tension: 0.3 },
-                    { label: "Luz", data: [], borderColor: "#f1c40f", tension: 0.3 }
+                    { 
+                        label: "Temp (°C)", 
+                        data: [], 
+                        borderColor: "#e74c3c", // Rojo
+                        backgroundColor: "rgba(231, 76, 60, 0.1)",
+                        borderWidth: 2,
+                        tension: 0.4,
+                        fill: false 
+                    },
+                    { 
+                        label: "H.Aire (%)", 
+                        data: [], 
+                        borderColor: "#3498db", // Azul
+                        backgroundColor: "rgba(52, 152, 219, 0.1)",
+                        borderWidth: 2,
+                        tension: 0.4,
+                        fill: false 
+                    },
+                    { 
+                        label: "H.Suelo (%)", 
+                        data: [], 
+                        borderColor: "#e67e22", // Naranja
+                        backgroundColor: "rgba(230, 126, 34, 0.1)",
+                        borderWidth: 2,
+                        tension: 0.4,
+                        fill: false 
+                    },
+                    { 
+                        label: "Luz (%)", 
+                        data: [], 
+                        borderColor: "#f1c40f", // Amarillo
+                        backgroundColor: "rgba(241, 196, 15, 0.1)",
+                        borderWidth: 2,
+                        tension: 0.4,
+                        fill: false 
+                    }
                 ]
             },
-            options: { animation: false, responsive: true, scales: { y: { min: 0, max: 100 } } }
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'bottom'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false, // Permite ver mejor las variaciones pequeñas
+                        grid: { color: "#f0f0f0" },
+                        title: { display: true, text: 'Valor Medido' }
+                    },
+                    x: {
+                        grid: { display: false },
+                        title: { display: true, text: 'Tiempo' }
+                    }
+                }
+            }
         });
     }
 };
 
-// Bucle de actualización
+// Bucle de actualización cada 2 segundos
 setInterval(() => {
     if (!sistemaActivo) return;
     fetch("/datos")
@@ -30,7 +82,7 @@ setInterval(() => {
         .then(data => {
             if (data.estado === "SISTEMA APAGADO") { 
                 apagarUI(); 
-            } else {
+            } else if (data.estado !== "DESCONECTADO") {
                 actualizarUI(data);
                 if (miGrafica) actualizarGrafica(data);
             }
@@ -74,16 +126,22 @@ function verificarCultivo(data) {
 
 function actualizarGrafica(d) {
     if (!miGrafica) return;
-    if (miGrafica.data.labels.length > 20) {
+    
+    // Mantener solo los últimos 15 registros para que no se amontone la gráfica
+    if (miGrafica.data.labels.length > 15) {
         miGrafica.data.labels.shift();
         miGrafica.data.datasets.forEach(ds => ds.data.shift());
     }
-    miGrafica.data.labels.push(new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}));
+
+    const ahora = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
+    
+    miGrafica.data.labels.push(ahora);
     miGrafica.data.datasets[0].data.push(d.temperatura);
     miGrafica.data.datasets[1].data.push(d.humedad_aire);
     miGrafica.data.datasets[2].data.push(d.humedad_suelo);
     miGrafica.data.datasets[3].data.push(d.luminosidad);
-    miGrafica.update("none");
+    
+    miGrafica.update();
 }
 
 function controlSistema(estado) {
@@ -105,7 +163,7 @@ function controlSistema(estado) {
 }
 
 function apagarUI() {
-    document.querySelectorAll("span").forEach(s => s.innerText = "--");
+    document.querySelectorAll(".card span").forEach(s => s.innerText = "--");
     document.getElementById("mensaje-adecuado").innerText = "🔴 SISTEMA APAGADO";
     document.getElementById("mensaje-adecuado").className = "diagnostico-box estado-alerta";
     document.getElementById("estado-sistema").innerText = "🔴 SISTEMA APAGADO";
@@ -132,5 +190,3 @@ function cargarHistorial() {
 function descargarHistorial() { 
     window.location.href = "/descargar"; 
 }
-
-
